@@ -104,6 +104,24 @@ object Calculs {
         if (type == "MOIS") moisLong(YearMonth.parse(periode)) else dateFr(LocalDate.parse(periode))
     } catch (e: Exception) { periode }
 
+    /** Texte en minuscules, sans accents, ponctuation remplacée par des espaces (comparaison de noms tolérante). */
+    fun normaliserTexte(s: String): String = java.text.Normalizer.normalize(s, java.text.Normalizer.Form.NFD).replace(Regex("\\p{Mn}+"), "")
+        .lowercase().replace(Regex("[^a-z0-9]+"), " ").trim()
+
+    /**
+     * PROTECTION DES DONNÉES : mots de la remarque qui sont le nom ou un prénom d'un personnel enregistré (mots entiers d'au moins 3 lettres,
+     * accents et majuscules ignorés). Un témoignage public ne doit citer aucun nom de personne. Retourne les mots trouvés, tels qu'enregistrés.
+     */
+    fun nomsCites(remarque: String, personnels: List<Pair<String, String>>): List<String> {
+        val mots = normaliserTexte(remarque).split(" ").toSet()
+        val trouves = linkedSetOf<String>()
+        for ((nom, prenoms) in personnels) for (jeton in (nom + " " + prenoms).split(Regex("[\\s'\\-]+"))) {
+            val n = normaliserTexte(jeton)
+            if (n.length >= 3 && n in mots) trouves.add(jeton.trim())
+        }
+        return trouves.toList()
+    }
+
     /** Texte d'un témoignage à partager (évaluations cochées « partageables » seulement) : aucune donnée sur les personnels. */
     fun temoignage(nomSociete: String, evaluations: List<Evaluation>): String {
         val liste = evaluations.filter { it.partageable }.sortedByDescending { it.periode }

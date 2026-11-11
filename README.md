@@ -2,6 +2,11 @@
 
 Suivi des **arrivées et départs du personnel de maison** (aide ménagère, gardien, laveur de véhicule, cuisinier(ère), chauffeur…), fiche de chaque personne, sociétés de placement, bilans et évaluations. Tout reste **sur le téléphone, chiffré**.
 
+## Protection des données dans les témoignages (version 1.2)
+- Seuls des **avis sur les sociétés de placement** peuvent être partagés (note, période, remarque), jamais de donnée sur le personnel.
+- La remarque étant un texte libre, un **contrôle** repère les mots qui sont le nom ou un prénom d'un personnel enregistré : à l'enregistrement d'une évaluation « partageable » et **avant chaque partage** de témoignage. L'application affiche les mots trouvés et propose de corriger ou de garder (faux positif possible).
+- Rappel sous le champ « Remarque » : « Ne citez aucun nom de personne ».
+
 ## Pointage très simple (version 1.1, pour personnes âgées ou à vue réduite)
 - **Un grand bouton** « Noter une arrivée ou un départ » → **3 questions, une par écran** : *Qui ?* (clic sur le nom) → *Arrivée ou départ ?* (deux gros boutons, le plus probable est « proposé ») → *Quand ?* (date et heure **proposées d'après l'horloge du téléphone**, modifiables : ± 5 min, heure, date) → vérification → **Enregistrer**.
 - **Horodatage** : chaque création, modification ou suppression est enregistrée dans un **journal** avec la date et l'heure de l'enregistrement (« corrigé le 11/11/2026 à 14:32 »).

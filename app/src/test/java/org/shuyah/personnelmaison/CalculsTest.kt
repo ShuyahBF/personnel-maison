@@ -86,4 +86,14 @@ class CalculsTest {
         assertNull(Calculs.actionJournal(425, 425)); assertNull(Calculs.actionJournal(null, null))
         assertEquals("corrigé", Calculs.actionTexte("MODIFICATION"))
     }
+
+    @Test fun nomsDePersonnesDansUneRemarque() {
+        val pers = listOf("OUEDRAOGO" to "Awa Marie", "BADINI" to "Salif")
+        assertEquals(listOf("Awa"), Calculs.nomsCites("Awa était très ponctuelle", pers))
+        assertEquals(listOf("OUEDRAOGO"), Calculs.nomsCites("Madame Ouedraogo est sérieuse", pers))   // majuscules ignorées
+        assertEquals(listOf("Salif"), Calculs.nomsCites("très bien, SALIF!", pers))
+        assertTrue(Calculs.nomsCites("Société sérieuse, personnel ponctuel et poli", pers).isEmpty())
+        assertTrue(Calculs.nomsCites("Awassa est un quartier", pers).isEmpty())                       // mots entiers seulement
+        assertTrue(Calculs.nomsCites("", pers).isEmpty())
+    }
 }

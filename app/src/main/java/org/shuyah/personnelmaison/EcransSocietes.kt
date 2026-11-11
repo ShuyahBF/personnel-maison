@@ -57,6 +57,7 @@ fun EcranFicheSociete(id: Long, ouvrir: (Ecran) -> Unit, retour: () -> Unit) {
     val personnels by dao.personnel().collectAsState(emptyList())
     val evaluations by dao.evaluations(id).collectAsState(emptyList())
     var suppression by remember { mutableStateOf(false) }
+    var controle by remember { mutableStateOf<List<Pair<Evaluation, List<String>>>>(emptyList()) }     // évaluations dont la remarque cite un nom
     societe = liste.find { it.id == id }
     val s = societe
     if (s == null) { Page("Société", retour) { Text("Société introuvable.") }; return }
@@ -93,13 +94,20 @@ fun EcranFicheSociete(id: Long, ouvrir: (Ecran) -> Unit, retour: () -> Unit) {
         RangeeTuiles {
             Tuile(Icons.Filled.RateReview, "Évaluer", Orange) { ouvrir(Ecran.FormEvaluation(id, null)) }
             Tuile(Icons.Filled.Share, "Témoignage", Bleu, actif = evaluations.any { it.partageable }) {
-                partager(c, "Témoignage sur ${s.nom}", Calculs.temoignage(s.nom, evaluations))
+                // Protection des données : aucune remarque partagée ne doit citer le nom d'un personnel enregistré
+                val noms = personnels.map { it.nom to it.prenoms }
+                val problemes = evaluations.filter { it.partageable }.map { it to Calculs.nomsCites(it.remarque, noms) }.filter { it.second.isNotEmpty() }
+                if (problemes.isEmpty()) partager(c, "Témoignage sur ${s.nom}", Calculs.temoignage(s.nom, evaluations)) else controle = problemes
             }
             Tuile(Icons.Filled.Edit, "Modifier") { ouvrir(Ecran.FormSociete(id)) }
             Tuile(Icons.Filled.Delete, "Supprimer", Rouge) { suppression = true }
         }
         Text("« Témoignage » partage seulement les évaluations cochées « partageables » : le texte ne contient aucune information sur les personnels.", fontSize = 11.sp, color = Gris)
     }
+    if (controle.isNotEmpty()) AlertDialog(onDismissRequest = { controle = emptyList() }, title = { Text("Des noms de personnes ?") },
+        text = { Text("Ces remarques semblent citer :\n" + controle.joinToString("\n") { (e, mots) -> "• ${Calculs.periodeTexte(e.type, e.periode)} : ${mots.joinToString(", ")}" } + "\n\nCorrigez-les avant de partager.") },
+        confirmButton = { Tuile(Icons.Filled.Edit, "Corriger", Orange) { val e = controle.first().first; controle = emptyList(); ouvrir(Ecran.FormEvaluation(id, e.id)) } },
+        dismissButton = { Row { Tuile(Icons.Filled.Share, "Partager", Bleu) { controle = emptyList(); partager(c, "Témoignage sur ${s.nom}", Calculs.temoignage(s.nom, evaluations)) }; Tuile(Icons.Filled.Close, "Annuler") { controle = emptyList() } } })
     if (suppression) Confirmation("Supprimer cette société ?", "Ses évaluations seront effacées. Les personnels rattachés restent, sans société.", {
         scope.launch { dao.detacherPersonnel(id); dao.supprimerEvaluationsDe(id); dao.supprimerSociete(id) }; suppression = false; retour()
     }, { suppression = false })
@@ -175,10 +183,22 @@ fun EcranFormEvaluation(societeId: Long, id: Long?, retour: () -> Unit) {
     var note by remember { mutableStateOf(3) }
     var remarque by remember { mutableStateOf("") }
     var partageable by remember { mutableStateOf(false) }
+    val personnels by dao.personnel().collectAsState(emptyList())
+    var nomsTrouves by remember { mutableStateOf<List<String>>(emptyList()) }     // contrôle de protection des données avant enregistrement
     LaunchedEffect(id) {
         if (id != null) dao.evaluationParId(id)?.let { e ->
             existante = e; type = if (e.type == "MOIS") "Mois" else "Jour"; note = e.note; remarque = e.remarque; partageable = e.partageable
             date = try { if (e.type == "MOIS") YearMonth.parse(e.periode).atDay(1) else LocalDate.parse(e.periode) } catch (ex: Exception) { LocalDate.now() }
+        }
+    }
+    // Enregistrement de l'évaluation (création ou modification)
+    fun enregistrer() {
+        scope.launch {
+            val t = if (type == "Mois") "MOIS" else "JOUR"
+            val e = Evaluation(id = existante?.id ?: 0, societeId = societeId, type = t, periode = if (t == "MOIS") YearMonth.from(date).toString() else date.toString(),
+                note = note, remarque = remarque.trim(), partageable = partageable, creeLe = existante?.creeLe ?: System.currentTimeMillis())
+            if (existante == null) dao.ajouterEvaluation(e) else dao.modifierEvaluation(e)
+            retour()
         }
     }
     Page(if (id == null) "Nouvelle évaluation" else "Modifier l'évaluation", retour) {
@@ -188,6 +208,7 @@ fun EcranFormEvaluation(societeId: Long, id: Long?, retour: () -> Unit) {
             if (type == "Mois") Text("Mois évalué : ${Calculs.moisLong(YearMonth.from(date))}", fontSize = 13.sp, color = Gris)
             Text("Note", fontSize = 13.sp, color = Gris, modifier = Modifier.padding(top = 8.dp)); Etoiles(note, 34) { note = it }
             Champ("Remarque", remarque, { remarque = it }, lignes = 3)
+            Text("Ne citez aucun nom de personne dans la remarque.", fontSize = 12.sp, color = Gris)
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 6.dp)) {
                 Switch(partageable, { partageable = it }); Text("  Peut être partagée comme témoignage public", fontSize = 13.sp)
             }
@@ -195,15 +216,17 @@ fun EcranFormEvaluation(societeId: Long, id: Long?, retour: () -> Unit) {
         }
         RangeeTuiles {
             Tuile(Icons.Filled.Check, "Enregistrer", Vert) {
-                scope.launch {
-                    val t = if (type == "Mois") "MOIS" else "JOUR"
-                    val e = Evaluation(id = existante?.id ?: 0, societeId = societeId, type = t, periode = if (t == "MOIS") YearMonth.from(date).toString() else date.toString(),
-                        note = note, remarque = remarque.trim(), partageable = partageable, creeLe = existante?.creeLe ?: System.currentTimeMillis())
-                    if (existante == null) dao.ajouterEvaluation(e) else dao.modifierEvaluation(e)
-                    retour()
-                }
+                // Évaluation partageable : on vérifie que la remarque ne cite pas un personnel enregistré
+                val cites = if (partageable) Calculs.nomsCites(remarque, personnels.map { it.nom to it.prenoms }) else emptyList()
+                if (cites.isNotEmpty()) { nomsTrouves = cites; return@Tuile }
+                enregistrer()
             }
             Tuile(Icons.Filled.Close, "Annuler") { retour() }
         }
     }
+    if (nomsTrouves.isNotEmpty()) AlertDialog(onDismissRequest = { nomsTrouves = emptyList() },
+        title = { Text("Un nom de personne ?") },
+        text = { Text("La remarque semble citer : ${nomsTrouves.joinToString(", ")}.\nUn témoignage partageable ne doit contenir aucun nom de personne. Corrigez la remarque, ou gardez-la si ce n'est pas un nom.") },
+        confirmButton = { Tuile(Icons.Filled.Edit, "Corriger", Orange) { nomsTrouves = emptyList() } },
+        dismissButton = { Tuile(Icons.Filled.Check, "Garder", Vert) { nomsTrouves = emptyList(); enregistrer() } })
 }
