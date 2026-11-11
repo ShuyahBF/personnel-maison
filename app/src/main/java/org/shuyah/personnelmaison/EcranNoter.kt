@@ -38,6 +38,7 @@ fun EcranNoter(retour: () -> Unit) {
     var existant by remember { mutableStateOf<Pointage?>(null) }
     var resultat by remember { mutableStateOf("") }
     val aujourdhui = LocalDate.now()
+    val horaires = horairesDe(dao, personnels)
     val actifs = personnels.filter { p -> try { !LocalDate.parse(p.dateDebut).isAfter(aujourdhui) && (p.dateFin == null || !LocalDate.parse(p.dateFin).isBefore(aujourdhui)) } catch (e: Exception) { true } }
 
     // Retour d'une étape ; à la première étape, on quitte
@@ -81,8 +82,9 @@ fun EcranNoter(retour: () -> Unit) {
                 GrosBouton(Icons.Filled.CalendarMonth, "Changer la date", Bleu) { choisirDate(c, date) { date = it } }
                 if (date != LocalDate.now() || minutes != maintenant()) Text("Revenir à l'heure du téléphone", fontSize = 16.sp, color = Bleu, modifier = Modifier.padding(vertical = 6.dp).clickable { date = LocalDate.now(); minutes = maintenant() })
                 if (genre == Genre.ARRIVEE && p != null) {
-                    val retard = Calculs.retardMinutes(minutes, p.debutMin, Reglages.tolerance(c))
-                    if (retard > 0) { Text("Retard de ${Calculs.duree(retard)} (horaire prévu ${Calculs.heure(p.debutMin)})", fontSize = 18.sp, color = Rouge); Champ("Motif du retard (facultatif)", motif, { motif = it }) }
+                    val prevu = horaires[p.id]?.pour(date.dayOfWeek)             // horaire prévu CE jour-là (le samedi peut différer)
+                    val retard = prevu?.let { Calculs.retardMinutes(minutes, it.debutMin, Reglages.tolerance(c)) } ?: 0
+                    if (retard > 0) { Text("Retard de ${Calculs.duree(retard)} (horaire prévu ${Calculs.heure(prevu?.debutMin)})", fontSize = 18.sp, color = Rouge); Champ("Motif du retard (facultatif)", motif, { motif = it }) }
                 }
                 GrosBouton(Icons.Filled.ArrowForward, "Continuer", Vert) { etape = 3 }
             }
@@ -98,7 +100,7 @@ fun EcranNoter(retour: () -> Unit) {
                 GrosBouton(Icons.Filled.Check, "ENREGISTRER", Vert) {
                     scope.launch {
                         if (p != null) {
-                            val retard = genre == Genre.ARRIVEE && Calculs.retardMinutes(minutes, p.debutMin, Reglages.tolerance(c)) > 0
+                            val retard = genre == Genre.ARRIVEE && (horaires[p.id]?.pour(date.dayOfWeek)?.let { Calculs.retardMinutes(minutes, it.debutMin, Reglages.tolerance(c)) } ?: 0) > 0
                             dao.noterHeure(p.id, date.toString(), genre, minutes, retardSignale = if (genre == Genre.ARRIVEE) retard else null, motif = if (retard && motif.isNotBlank()) motif.trim() else null)
                             resultat = "${p.prenoms} ${p.nom}\n${if (genre == Genre.ARRIVEE) "Arrivée" else "Départ"} à ${Calculs.heure(minutes)}\n${Calculs.dateFr(date)}" + if (dejaNote != null) "\n(correction)" else ""
                             etape = 4
@@ -160,11 +162,13 @@ fun EcranCorrection(personnelId: Long, date: String, retour: () -> Unit) {
     val p by dao.personnelFlow(personnelId).collectAsState(null)
     val pointages by dao.pointagesDuJour(date).collectAsState(emptyList())
     val journal by dao.journal(personnelId, date).collectAsState(emptyList())
+    val lignesHoraires by dao.tousHoraires().collectAsState(emptyList())
     val pt = pointages.find { it.personnelId == personnelId }
     var motif by remember(pt?.motif) { mutableStateOf(pt?.motif ?: "") }
     var suppression by remember { mutableStateOf(false) }
     val agent = p ?: run { Page("Pointage", retour) { Text("Fiche introuvable.") }; return }
     val jour = LocalDate.parse(date)
+    val prevu = creneauDuJour(agent, lignesHoraires, jour)                       // horaire prévu ce jour-là (null = repos)
 
     @Composable fun Bloc(titre: String, genre: String, valeur: Int?, couleur: androidx.compose.ui.graphics.Color, parDefaut: Int) {
         Carte {
@@ -180,9 +184,9 @@ fun EcranCorrection(personnelId: Long, date: String, retour: () -> Unit) {
     Page("Corriger", retour) {
         Text("${agent.prenoms} ${agent.nom}", fontSize = 24.sp, color = BleuNuit)
         Text(Calculs.dateLongue(jour), fontSize = 18.sp, color = Gris)
-        Bloc("Arrivée", Genre.ARRIVEE, pt?.arrivee, Vert, agent.debutMin)
-        Bloc("Départ", Genre.DEPART, pt?.depart, Bleu, agent.finMin)
-        val retard = Calculs.retardMinutes(pt?.arrivee, agent.debutMin, Reglages.tolerance(c))
+        Bloc("Arrivée", Genre.ARRIVEE, pt?.arrivee, Vert, prevu?.debutMin ?: 7 * 60)
+        Bloc("Départ", Genre.DEPART, pt?.depart, Bleu, prevu?.finMin ?: 17 * 60)
+        val retard = prevu?.let { Calculs.retardMinutes(pt?.arrivee, it.debutMin, Reglages.tolerance(c)) } ?: 0
         if (retard > 0) Text("Retard de ${Calculs.duree(retard)}", fontSize = 18.sp, color = Rouge)
         Carte {
             Row(verticalAlignment = Alignment.CenterVertically) {

@@ -64,6 +64,9 @@ fun EcranFichePersonnel(id: Long, ouvrir: (Ecran) -> Unit, retour: () -> Unit) {
     val p by dao.personnelFlow(id).collectAsState(null)
     val societes by dao.societes().collectAsState(emptyList())
     val notes by dao.notes(id).collectAsState(emptyList())
+    val tousNumeros by dao.tousNumeros().collectAsState(emptyList())
+    val tousPersonnels by dao.personnel().collectAsState(emptyList())
+    val horaires = horairesDe(dao, tousPersonnels)
     val mois = remember { YearMonth.now() }
     val pointages by dao.pointagesPersonnel(id, mois.atDay(1).toString(), mois.atEndOfMonth().toString()).collectAsState(emptyList())
     var nouvelleNote by remember { mutableStateOf("") }
@@ -71,7 +74,7 @@ fun EcranFichePersonnel(id: Long, ouvrir: (Ecran) -> Unit, retour: () -> Unit) {
     val personnel = p
     if (personnel == null) { Page("Personnel", retour) { Text("Fiche introuvable.") }; return }
     val societe = societes.find { it.id == personnel.societeId }
-    val stats = Calculs.statsMois(mois, ContratInfo(personnel.debutMin, personnel.finMin, personnel.jours, LocalDate.parse(personnel.dateDebut), personnel.dateFin?.let { LocalDate.parse(it) }),
+    val stats = Calculs.statsMois(mois, ContratInfo(horaires[personnel.id] ?: Horaires.uniforme(personnel.debutMin, personnel.finMin, personnel.jours), LocalDate.parse(personnel.dateDebut), personnel.dateFin?.let { LocalDate.parse(it) }),
         pointages.map { JourPointage(LocalDate.parse(it.date), it.arrivee, it.depart, it.retardSignale, it.absent) }, Reglages.tolerance(c), LocalDate.now())
 
     Page("${personnel.prenoms} ${personnel.nom}", retour) {
@@ -79,9 +82,12 @@ fun EcranFichePersonnel(id: Long, ouvrir: (Ecran) -> Unit, retour: () -> Unit) {
             Ligne("Fonction", personnel.fonction)
             Ligne("Société", societe?.nom ?: "Aucune")
             Ligne("Début", Calculs.dateFr(personnel.dateDebut)); Ligne("Fin", personnel.dateFin?.let { Calculs.dateFr(it) } ?: "Non définie")
-            Ligne("Horaires", "${Calculs.heure(personnel.debutMin)} → ${Calculs.heure(personnel.finMin)}"); Ligne("Jours", Calculs.joursTexte(personnel.jours))
-            Ligne("Salaire net", Calculs.francs(personnel.salaireNet)); Ligne("Téléphone", personnel.telephone)
+            Ligne("Horaires", horaires[personnel.id]?.resume() ?: "—")
+            Ligne("Salaire net", Calculs.francs(personnel.salaireNet))
         }
+        Carte("Téléphone", Icons.Filled.Phone) { BlocNumeros("Numéros", tousNumeros.filter { it.proprietaire == "PERSONNEL" && it.proprietaireId == id }) }
+        BlocPaiements(personnel)
+        BlocTaches(personnel)
         // Numéros de paiement mobile : ils sont sur la fiche de la SOCIÉTÉ d'appartenance
         if (societe != null) Carte("Paiement via ${societe.nom}", Icons.Filled.PhoneAndroid) {
             Ligne("Orange Money", societe.orange); Ligne("Moov Money", societe.moov); Ligne("Telecel Money", societe.telecel)
@@ -125,7 +131,8 @@ fun EcranFichePersonnel(id: Long, ouvrir: (Ecran) -> Unit, retour: () -> Unit) {
     if (suppression) Confirmation("Supprimer cette fiche ?", "La fiche, ses pointages, ses notes et la copie de la pièce d'identité seront effacés définitivement.", {
         scope.launch {
             Pieces.supprimer(c, personnel.pieceChemin)
-            dao.supprimerPointagesDe(id); dao.supprimerJournalDe(id); dao.supprimerNotesDe(id); dao.supprimerPersonnel(id)
+            dao.supprimerPointagesDe(id); dao.supprimerJournalDe(id); dao.supprimerNotesDe(id)
+            dao.supprimerHoraires(id); dao.supprimerNumeros("PERSONNEL", id); dao.supprimerPaiementsDe(id); dao.supprimerTachesDe(id); dao.supprimerPersonnel(id)
         }
         suppression = false; retour()
     }, { suppression = false })
@@ -171,8 +178,10 @@ fun EcranFormPersonnel(id: Long?, retour: () -> Unit) {
     var nom by remember { mutableStateOf("") }; var prenoms by remember { mutableStateOf("") }
     var fonction by remember { mutableStateOf(FONCTIONS[0]) }; var societeId by remember { mutableStateOf<Long?>(null) }
     var debut by remember { mutableStateOf(LocalDate.now().toString()) }; var fin by remember { mutableStateOf<String?>(null) }
-    var debutMin by remember { mutableStateOf(7 * 60) }; var finMin by remember { mutableStateOf(17 * 60) }; var jours by remember { mutableStateOf(63) }
-    var salaire by remember { mutableStateOf("") }; var telephone by remember { mutableStateOf("") }
+    // Horaires de chaque jour (jour 0 = lundi) ; par défaut lundi à samedi, 07:00 à 17:00 ; un jour absent = repos
+    val horaires = remember { mutableStateMapOf<Int, Creneau>().apply { for (j in 0..5) put(j, Creneau(7 * 60, 17 * 60)) } }
+    val numeros = remember { mutableStateListOf<NumeroEdit>() }                 // 3 numéros au plus, un par défaut
+    var salaire by remember { mutableStateOf("") }
     var pieceNom by remember { mutableStateOf<String?>(null) }; var pieceTexte by remember { mutableStateOf("") }
     var nouvellePiece by remember { mutableStateOf<String?>(null) }       // copie créée pendant cette saisie (supprimée si on annule)
     var occupe by remember { mutableStateOf(false) }; var message by remember { mutableStateOf<String?>(null) }
@@ -181,7 +190,11 @@ fun EcranFormPersonnel(id: Long?, retour: () -> Unit) {
     LaunchedEffect(id) {
         if (id != null) dao.personnelParId(id)?.let { p ->
             existant = p; nom = p.nom; prenoms = p.prenoms; fonction = p.fonction; societeId = p.societeId; debut = p.dateDebut; fin = p.dateFin
-            debutMin = p.debutMin; finMin = p.finMin; jours = p.jours; salaire = if (p.salaireNet > 0) p.salaireNet.toString() else ""; telephone = p.telephone
+            salaire = if (p.salaireNet > 0) p.salaireNet.toString() else ""
+            val h = dao.horairesDe(p.id)
+            horaires.clear()
+            if (h.isNotEmpty()) h.forEach { horaires[it.jour] = Creneau(it.debutMin, it.finMin) } else horaires.putAll(Horaires.uniforme(p.debutMin, p.finMin, p.jours).parJour)
+            numeros.clear(); numeros.addAll(dao.numerosEdit("PERSONNEL", p.id))
             pieceNom = p.pieceChemin; pieceTexte = p.pieceTexte
         }
     }
@@ -211,7 +224,7 @@ fun EcranFormPersonnel(id: Long?, retour: () -> Unit) {
     val galerie = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri -> if (uri != null) traiter(uri) }
 
     fun annuler() { nouvellePiece?.let { Pieces.supprimer(c, it) }; retour() }
-    val valide = nom.isNotBlank() && prenoms.isNotBlank() && finMin > debutMin && jours != 0
+    val valide = nom.isNotBlank() && prenoms.isNotBlank() && horaires.isNotEmpty() && horaires.values.all { it.finMin > it.debutMin }
 
     Page(if (id == null) "Nouveau personnel" else "Modifier la fiche", ::annuler) {
         Carte("Pièce d'identité (lecture automatique)", Icons.Filled.Badge) {
@@ -236,32 +249,28 @@ fun EcranFormPersonnel(id: Long?, retour: () -> Unit) {
             Champ("Nom", nom, { nom = it }); Champ("Prénoms", prenoms, { prenoms = it })
             Liste("Fonction", fonction, FONCTIONS, valeurLibre = true) { fonction = it }
             Liste("Société de placement", societes.find { it.id == societeId }?.nom ?: "Aucune", listOf("Aucune") + societes.map { it.nom }) { choix -> societeId = societes.find { it.nom == choix }?.id }
-            Champ("Téléphone", telephone, { telephone = it }, KeyboardType.Phone)
+            EditeurNumeros(numeros)
         }
         Carte("Contrat", Icons.Filled.Work) {
             ChampDate("Date de début", debut, { debut = it.toString() })
             ChampDate("Date de fin (facultative)", fin, { fin = it.toString() }, { fin = null })
-            ChampHeure("Heure de début", debutMin) { debutMin = it }
-            ChampHeure("Heure de fin", finMin) { finMin = it }
-            Text("Jours travaillés", fontSize = 13.sp, color = Gris, modifier = Modifier.padding(top = 6.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                Plage.JOURS_COURTS.forEachIndexed { i, l ->
-                    val on = jours and (1 shl i) != 0
-                    Box(Modifier.size(36.dp).clip(androidx.compose.foundation.shape.CircleShape).background(if (on) Bleu else androidx.compose.ui.graphics.Color(0xFFE2E8F0)).clickable { jours = jours xor (1 shl i) },
-                        contentAlignment = Alignment.Center) { Text(l, color = if (on) androidx.compose.ui.graphics.Color.White else Gris, fontSize = 13.sp) }
-                }
-            }
+            EditeurHoraires(horaires)
             Champ("Salaire net à payer (FCFA)", salaire, { salaire = it.filter { ch -> ch.isDigit() } }, KeyboardType.Number)
         }
-        if (finMin <= debutMin) Text("L'heure de fin doit être après l'heure de début.", color = Rouge, fontSize = 13.sp)
         RangeeTuiles {
             Tuile(Icons.Filled.Check, "Enregistrer", Vert, actif = valide && !occupe) {
                 scope.launch {
                     val ancienne = existant?.pieceChemin
+                    // Anciennes colonnes (horaire unique, jours) : recopiées du premier jour travaillé, pour compatibilité ; la vérité est dans les horaires par jour
+                    val premier = horaires.toSortedMap().values.firstOrNull() ?: Creneau(7 * 60, 17 * 60)
+                    val masque = horaires.keys.fold(0) { a, j -> a or (1 shl j) }
                     val p = Personnel(id = existant?.id ?: 0, nom = nom.trim(), prenoms = prenoms.trim(), fonction = fonction, societeId = societeId, dateDebut = debut, dateFin = fin,
-                        debutMin = debutMin, finMin = finMin, jours = jours, salaireNet = salaire.toLongOrNull() ?: 0, telephone = telephone.trim(), pieceChemin = pieceNom, pieceTexte = pieceTexte,
+                        debutMin = premier.debutMin, finMin = premier.finMin, jours = masque, salaireNet = salaire.toLongOrNull() ?: 0, telephone = "", pieceChemin = pieceNom, pieceTexte = pieceTexte,
                         creeLe = existant?.creeLe ?: System.currentTimeMillis())
-                    if (existant == null) dao.ajouterPersonnel(p) else dao.modifierPersonnel(p)
+                    val pid = if (existant == null) dao.ajouterPersonnel(p) else { dao.modifierPersonnel(p); p.id }
+                    dao.supprimerHoraires(pid)
+                    horaires.toSortedMap().forEach { (j, cr) -> dao.ajouterHoraire(HorairePersonnel(personnelId = pid, jour = j, debutMin = cr.debutMin, finMin = cr.finMin)) }
+                    dao.enregistrerNumeros("PERSONNEL", pid, numeros.toList())
                     if (ancienne != null && ancienne != pieceNom) Pieces.supprimer(c, ancienne)     // ancienne copie remplacée ou retirée
                     nouvellePiece = null; retour()
                 }

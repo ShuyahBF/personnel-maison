@@ -2,6 +2,14 @@
 
 Suivi des **arrivées et départs du personnel de maison** (aide ménagère, gardien, laveur de véhicule, cuisinier(ère), chauffeur…), fiche de chaque personne, sociétés de placement, bilans et évaluations. Tout reste **sur le téléphone, chiffré**.
 
+## Version 1.3
+- **Téléphones** : jusqu'à **3 numéros** par personnel et par société, un **numéro par défaut**, et un pictogramme **Appeler** (ouvre le clavier d'appel du téléphone avec le numéro) et **Copier**.
+- **Horaires par jour** : chaque jour de la semaine a ses propres heures (samedi plus court, jour de repos…) ; retards, départs anticipés et bilans utilisent l'horaire DU JOUR. Les anciennes fiches sont converties automatiquement.
+- **Bonus et retenues** sur salaire : saisie datée avec motif, **net à payer du mois** (salaire net + bonus − retenues) sur la fiche et dans « Bilans ».
+- **Tâches habituelles** de chaque personnel : liste, ajout depuis les tâches usuelles de sa fonction (liste déroulante, « Autre… » libre).
+- **Contrat de prestations des sociétés** : photographier (une photo par page) ou joindre une image ou un PDF ; copies **chiffrées**, lues dans l'application, captures d'écran interdites pendant l'affichage.
+- Base de données en **version 3** : migration automatique, données conservées.
+
 ## Protection des données dans les témoignages (version 1.2)
 - Seuls des **avis sur les sociétés de placement** peuvent être partagés (note, période, remarque), jamais de donnée sur le personnel.
 - La remarque étant un texte libre, un **contrôle** repère les mots qui sont le nom ou un prénom d'un personnel enregistré : à l'enregistrement d'une évaluation « partageable » et **avant chaque partage** de témoignage. L'application affiche les mots trouvés et propose de corriger ou de garder (faux positif possible).

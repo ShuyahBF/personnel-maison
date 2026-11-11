@@ -56,6 +56,7 @@ fun EcranFicheSociete(id: Long, ouvrir: (Ecran) -> Unit, retour: () -> Unit) {
     val liste by dao.societes().collectAsState(emptyList())
     val personnels by dao.personnel().collectAsState(emptyList())
     val evaluations by dao.evaluations(id).collectAsState(emptyList())
+    val tousNumeros by dao.tousNumeros().collectAsState(emptyList())
     var suppression by remember { mutableStateOf(false) }
     var controle by remember { mutableStateOf<List<Pair<Evaluation, List<String>>>>(emptyList()) }     // évaluations dont la remarque cite un nom
     societe = liste.find { it.id == id }
@@ -64,12 +65,14 @@ fun EcranFicheSociete(id: Long, ouvrir: (Ecran) -> Unit, retour: () -> Unit) {
     val notes = evaluations.map { it.note }
     Page(s.nom, retour) {
         Carte("Coordonnées", Icons.Filled.Business) {
-            Ligne("Téléphone", s.telephone); Ligne("Adresse", s.adresse); Ligne("Remarques", s.remarques)
+            BlocNumeros("Téléphone", tousNumeros.filter { it.proprietaire == "SOCIETE" && it.proprietaireId == id })
+            Spacer(Modifier.height(6.dp)); Ligne("Adresse", s.adresse); Ligne("Remarques", s.remarques)
         }
         // Numéros de paiement mobile : copier ou appeler
         Carte("Paiement mobile", Icons.Filled.PhoneAndroid) {
             LigneNumero("Orange Money", s.orange); LigneNumero("Moov Money", s.moov); LigneNumero("Telecel Money", s.telecel)
         }
+        BlocDocuments(id, ouvrir)
         Carte("Personnel de cette société", Icons.Filled.Groups) {
             val siens = personnels.filter { it.societeId == id }
             if (siens.isEmpty()) Text("Aucun.", color = Gris, fontSize = 13.sp)
@@ -109,7 +112,11 @@ fun EcranFicheSociete(id: Long, ouvrir: (Ecran) -> Unit, retour: () -> Unit) {
         confirmButton = { Tuile(Icons.Filled.Edit, "Corriger", Orange) { val e = controle.first().first; controle = emptyList(); ouvrir(Ecran.FormEvaluation(id, e.id)) } },
         dismissButton = { Row { Tuile(Icons.Filled.Share, "Partager", Bleu) { controle = emptyList(); partager(c, "Témoignage sur ${s.nom}", Calculs.temoignage(s.nom, evaluations)) }; Tuile(Icons.Filled.Close, "Annuler") { controle = emptyList() } } })
     if (suppression) Confirmation("Supprimer cette société ?", "Ses évaluations seront effacées. Les personnels rattachés restent, sans société.", {
-        scope.launch { dao.detacherPersonnel(id); dao.supprimerEvaluationsDe(id); dao.supprimerSociete(id) }; suppression = false; retour()
+        scope.launch {
+            dao.documentsDeListe(id).forEach { Pieces.supprimer(c, it.fichier) }
+            dao.supprimerDocumentsDe(id); dao.supprimerNumeros("SOCIETE", id)
+            dao.detacherPersonnel(id); dao.supprimerEvaluationsDe(id); dao.supprimerSociete(id)
+        }; suppression = false; retour()
     }, { suppression = false })
 }
 
@@ -146,12 +153,13 @@ fun EcranFormSociete(id: Long?, retour: () -> Unit) {
     val dao = remember { Base.dao(c) }
     val scope = rememberCoroutineScope()
     var existante by remember { mutableStateOf<Societe?>(null) }
-    var nom by remember { mutableStateOf("") }; var telephone by remember { mutableStateOf("") }; var adresse by remember { mutableStateOf("") }
+    val numeros = remember { mutableStateListOf<NumeroEdit>() }                 // 3 numéros au plus, un par défaut
+    var nom by remember { mutableStateOf("") }; var adresse by remember { mutableStateOf("") }
     var orange by remember { mutableStateOf("") }; var moov by remember { mutableStateOf("") }; var telecel by remember { mutableStateOf("") }; var remarques by remember { mutableStateOf("") }
-    LaunchedEffect(id) { if (id != null) dao.societe(id)?.let { s -> existante = s; nom = s.nom; telephone = s.telephone; adresse = s.adresse; orange = s.orange; moov = s.moov; telecel = s.telecel; remarques = s.remarques } }
+    LaunchedEffect(id) { if (id != null) dao.societe(id)?.let { s -> existante = s; nom = s.nom; numeros.clear(); numeros.addAll(dao.numerosEdit("SOCIETE", s.id)); adresse = s.adresse; orange = s.orange; moov = s.moov; telecel = s.telecel; remarques = s.remarques } }
     Page(if (id == null) "Nouvelle société" else "Modifier la société", retour) {
         Carte("Société", Icons.Filled.Business) {
-            Champ("Nom de la société", nom, { nom = it }); Champ("Téléphone", telephone, { telephone = it }, KeyboardType.Phone)
+            Champ("Nom de la société", nom, { nom = it }); EditeurNumeros(numeros)
             Champ("Adresse", adresse, { adresse = it }); Champ("Remarques", remarques, { remarques = it }, lignes = 2)
         }
         Carte("Numéros de paiement mobile", Icons.Filled.PhoneAndroid) {
@@ -160,8 +168,9 @@ fun EcranFormSociete(id: Long?, retour: () -> Unit) {
         RangeeTuiles {
             Tuile(Icons.Filled.Check, "Enregistrer", Vert, actif = nom.isNotBlank()) {
                 scope.launch {
-                    val s = Societe(id = existante?.id ?: 0, nom = nom.trim(), telephone = telephone.trim(), adresse = adresse.trim(), orange = orange.trim(), moov = moov.trim(), telecel = telecel.trim(), remarques = remarques.trim())
-                    if (existante == null) dao.ajouterSociete(s) else dao.modifierSociete(s)
+                    val s = Societe(id = existante?.id ?: 0, nom = nom.trim(), telephone = "", adresse = adresse.trim(), orange = orange.trim(), moov = moov.trim(), telecel = telecel.trim(), remarques = remarques.trim())
+                    val sid = if (existante == null) dao.ajouterSociete(s) else { dao.modifierSociete(s); s.id }
+                    dao.enregistrerNumeros("SOCIETE", sid, numeros.toList())
                     retour()
                 }
             }

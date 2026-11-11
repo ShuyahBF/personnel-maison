@@ -27,7 +27,7 @@ object Pieces {
     private fun dossier(c: Context) = File(c.filesDir, "pieces").also { it.mkdirs() }
 
     /** Charge une image depuis une adresse (photo prise ou galerie) en la réduisant ; null si illisible. */
-    suspend fun charger(c: Context, uri: Uri): Bitmap? = withContext(Dispatchers.IO) {
+    suspend fun charger(c: Context, uri: Uri, maxPx: Int = 1600): Bitmap? = withContext(Dispatchers.IO) {
         try {
             val limites = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             c.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, limites) }
@@ -36,8 +36,8 @@ object Pieces {
             val options = BitmapFactory.Options().apply { inSampleSize = echantillon }
             val brut = c.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, options) } ?: return@withContext null
             val plusGrand = maxOf(brut.width, brut.height)
-            if (plusGrand <= 1600) brut else {
-                val f = 1600f / plusGrand
+            if (plusGrand <= maxPx) brut else {
+                val f = maxPx.toFloat() / plusGrand
                 Bitmap.createScaledBitmap(brut, (brut.width * f).toInt(), (brut.height * f).toInt(), true)
             }
         } catch (e: Exception) { null }
@@ -61,6 +61,49 @@ object Pieces {
             val octets = EncryptedFile.Builder(c, f, cle(c), EncryptedFile.FileEncryptionScheme.AES256_GCM_HKDF_4KB).build().openFileInput().use { it.readBytes() }
             BitmapFactory.decodeByteArray(octets, 0, octets.size)
         } catch (e: Exception) { null }
+    }
+
+    /** Enregistre des octets quelconques (PDF) chiffrés ; retourne le nom du fichier. */
+    suspend fun enregistrerOctets(c: Context, octets: ByteArray): String = withContext(Dispatchers.IO) {
+        val nom = UUID.randomUUID().toString() + ".enc"
+        EncryptedFile.Builder(c, File(dossier(c), nom), cle(c), EncryptedFile.FileEncryptionScheme.AES256_GCM_HKDF_4KB).build().openFileOutput().use { it.write(octets) }
+        nom
+    }
+
+    /** Relit et déchiffre un fichier enregistré ; null si absent. */
+    suspend fun lireOctets(c: Context, nom: String?): ByteArray? = withContext(Dispatchers.IO) {
+        if (nom.isNullOrBlank()) return@withContext null
+        try {
+            val f = File(dossier(c), nom)
+            if (!f.exists()) null else EncryptedFile.Builder(c, f, cle(c), EncryptedFile.FileEncryptionScheme.AES256_GCM_HKDF_4KB).build().openFileInput().use { it.readBytes() }
+        } catch (e: Exception) { null }
+    }
+
+    /** Octets d'un fichier choisi (galerie, gestionnaire de fichiers) ; null si illisible ou trop gros (20 Mo). */
+    suspend fun octetsDe(c: Context, uri: Uri): ByteArray? = withContext(Dispatchers.IO) {
+        try { c.contentResolver.openInputStream(uri)?.use { it.readBytes() }?.takeIf { it.size <= 20 * 1024 * 1024 } } catch (e: Exception) { null }
+    }
+
+    /**
+     * Pages d'un PDF enregistré, rendues en images dans l'application (le PDF déchiffré n'est écrit que le temps du rendu, dans le dossier
+     * temporaire privé, puis supprimé). 10 pages au plus.
+     */
+    suspend fun pagesPdf(c: Context, nom: String?, maxPages: Int = 10): List<Bitmap> = withContext(Dispatchers.IO) {
+        val octets = lireOctets(c, nom) ?: return@withContext emptyList()
+        val tmp = File(c.cacheDir, "pdf_" + UUID.randomUUID() + ".pdf")
+        try {
+            tmp.writeBytes(octets)
+            android.os.ParcelFileDescriptor.open(tmp, android.os.ParcelFileDescriptor.MODE_READ_ONLY).use { pfd ->
+                android.graphics.pdf.PdfRenderer(pfd).use { r ->
+                    (0 until minOf(r.pageCount, maxPages)).map { i ->
+                        r.openPage(i).use { page ->
+                            val w = 1200; val h = (w.toFloat() / page.width * page.height).toInt()
+                            Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).also { it.eraseColor(android.graphics.Color.WHITE); page.render(it, null, null, android.graphics.pdf.PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY) }
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) { emptyList() } finally { tmp.delete() }
     }
 
     /** Supprime la copie chiffrée. */

@@ -28,6 +28,8 @@ fun EcranStats(ouvrir: (Ecran) -> Unit) {
     val personnels by dao.personnel().collectAsState(emptyList())
     val societes by dao.societes().collectAsState(emptyList())
     val evaluations by dao.toutesEvaluations().collectAsState(emptyList())
+    val paiements by dao.tousPaiements().collectAsState(emptyList())
+    val horaires = horairesDe(dao, personnels)
     val pointages by remember(mois) { dao.pointagesPeriode(mois.atDay(1).toString(), mois.atEndOfMonth().toString()) }.collectAsState(emptyList())
     var tolerance by remember { mutableStateOf(Reglages.tolerance(c)) }
     var reglage by remember { mutableStateOf(false) }
@@ -38,7 +40,7 @@ fun EcranStats(ouvrir: (Ecran) -> Unit) {
         val debut = try { LocalDate.parse(p.dateDebut) } catch (e: Exception) { return@mapNotNull null }
         val fin = p.dateFin?.let { try { LocalDate.parse(it) } catch (e: Exception) { null } }
         if (debut.isAfter(mois.atEndOfMonth()) || (fin != null && fin.isBefore(mois.atDay(1)))) return@mapNotNull null
-        p to Calculs.statsMois(mois, ContratInfo(p.debutMin, p.finMin, p.jours, debut, fin),
+        p to Calculs.statsMois(mois, ContratInfo(horaires[p.id] ?: Horaires.uniforme(p.debutMin, p.finMin, p.jours), debut, fin),
             pointages.filter { it.personnelId == p.id }.map { JourPointage(LocalDate.parse(it.date), it.arrivee, it.depart, it.retardSignale, it.absent) }, tolerance, aujourdhui)
     }
 
@@ -68,6 +70,21 @@ fun EcranStats(ouvrir: (Ecran) -> Unit) {
                     HorizontalDivider()
                 }
                 Text("Retard compté au-delà de $tolerance min de tolérance ou quand il est signalé à la main.", fontSize = 11.sp, color = Gris, modifier = Modifier.padding(top = 6.dp))
+            }
+        }
+        // Paie du mois : salaire net + bonus − retenues (chiffres alignés à droite)
+        if (lignes.isNotEmpty()) Carte("Paie de ${Calculs.moisLong(mois)}", Icons.Filled.Payments) {
+            lignes.forEach { (p, _) ->
+                val duMois = paiements.filter { it.personnelId == p.id && it.date.startsWith(mois.toString()) }
+                val bonus = duMois.filter { it.genre == "BONUS" }.sumOf { it.montant }; val retenues = duMois.filter { it.genre == "RETENUE" }.sumOf { it.montant }
+                Column(Modifier.fillMaxWidth().padding(vertical = 5.dp)) {
+                    Text("${p.prenoms} ${p.nom}", fontSize = 14.sp, color = BleuNuit)
+                    Row(Modifier.fillMaxWidth()) { Text("Salaire net", Modifier.weight(1f), fontSize = 12.sp, color = Gris); Text(Calculs.francs(p.salaireNet), fontSize = 13.sp, textAlign = TextAlign.End) }
+                    if (bonus > 0) Row(Modifier.fillMaxWidth()) { Text("Bonus", Modifier.weight(1f), fontSize = 12.sp, color = Gris); Text("+ " + Calculs.francs(bonus), fontSize = 13.sp, color = Vert, textAlign = TextAlign.End) }
+                    if (retenues > 0) Row(Modifier.fillMaxWidth()) { Text("Retenues", Modifier.weight(1f), fontSize = 12.sp, color = Gris); Text("− " + Calculs.francs(retenues), fontSize = 13.sp, color = Rouge, textAlign = TextAlign.End) }
+                    Row(Modifier.fillMaxWidth()) { Text("Net à payer", Modifier.weight(1f), fontSize = 13.sp, color = BleuNuit); Text(Calculs.francs(Calculs.netAPayer(p.salaireNet, paiements.filter { it.personnelId == p.id }, mois)), fontSize = 14.sp, color = BleuNuit, textAlign = TextAlign.End) }
+                }
+                HorizontalDivider()
             }
         }
         Carte("Sociétés de placement", Icons.Filled.Business) {

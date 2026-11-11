@@ -7,7 +7,7 @@ import java.time.YearMonth
 
 /** Tests des calculs (retards, présences du mois, formats) et de la lecture des noms sur une pièce d'identité. */
 class CalculsTest {
-    private val contrat = ContratInfo(7 * 60, 17 * 60, 63, LocalDate.of(2026, 11, 1), null)   // 07:00–17:00, lundi à samedi, depuis le 01/11/2026
+    private val contrat = ContratInfo(Horaires.uniforme(7 * 60, 17 * 60, 63), LocalDate.of(2026, 11, 1), null)   // 07:00–17:00, lundi à samedi, depuis le 01/11/2026
 
     private fun p(jour: Int, arrivee: Int?, depart: Int?, retard: Boolean = false, absent: Boolean = false) =
         JourPointage(LocalDate.of(2026, 11, jour), arrivee, depart, retard, absent)
@@ -95,5 +95,23 @@ class CalculsTest {
         assertTrue(Calculs.nomsCites("Société sérieuse, personnel ponctuel et poli", pers).isEmpty())
         assertTrue(Calculs.nomsCites("Awassa est un quartier", pers).isEmpty())                       // mots entiers seulement
         assertTrue(Calculs.nomsCites("", pers).isEmpty())
+    }
+
+    @Test fun horairesDifferentsSelonLeJour() {
+        // Lundi à vendredi 07:00–17:00, samedi 07:00–12:00, dimanche repos
+        val h = Horaires((0..4).associateWith { Creneau(420, 1020) } + (5 to Creneau(420, 720)))
+        assertEquals("Lun–Ven 07:00–17:00 · Sam 07:00–12:00 · repos : Dim", h.resume())
+        assertEquals(Creneau(420, 720), h.pour(java.time.DayOfWeek.SATURDAY)); assertNull(h.pour(java.time.DayOfWeek.SUNDAY))
+        // Samedi 07/11/2026 : arrivée 07:30 (retard), départ 11:55 (pas anticipé car l'horaire du samedi finit à 12:00)
+        val c = ContratInfo(h, LocalDate.of(2026, 11, 1), null)
+        val s = Calculs.statsMois(YearMonth.of(2026, 11), c, listOf(p(7, 7 * 60 + 30, 11 * 60 + 55)), 10, LocalDate.of(2026, 11, 7))
+        assertEquals(1, s.retards); assertEquals(30, s.retardTotalMin); assertEquals(0, s.departsAnticipes)
+        assertEquals("Aucun jour travaillé", Horaires(emptyMap()).resume())
+    }
+
+    @Test fun netAPayerAvecBonusEtRetenues() {
+        val p = listOf(Paiement(1, 1, "2026-11-05", "BONUS", 10000), Paiement(2, 1, "2026-11-20", "RETENUE", 4000), Paiement(3, 1, "2026-10-30", "BONUS", 99999))
+        assertEquals(106000L, Calculs.netAPayer(100000, p, YearMonth.of(2026, 11)))
+        assertEquals(100000L, Calculs.netAPayer(100000, emptyList(), YearMonth.of(2026, 11)))
     }
 }

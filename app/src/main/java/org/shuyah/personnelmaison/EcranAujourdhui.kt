@@ -29,6 +29,7 @@ fun EcranAujourdhui(ouvrir: (Ecran) -> Unit, grosTexte: Boolean, surGrosTexte: (
     val societes by dao.societes().collectAsState(emptyList())
     val pointages by dao.pointagesDuJour(aujourdhui.toString()).collectAsState(emptyList())
     val tolerance = Reglages.tolerance(c)
+    val horaires = horairesDe(dao, personnels)
     val actifs = personnels.filter { p -> try { !LocalDate.parse(p.dateDebut).isAfter(aujourdhui) && (p.dateFin == null || !LocalDate.parse(p.dateFin).isBefore(aujourdhui)) } catch (e: Exception) { true } }
 
     Page("Pointage") {
@@ -39,8 +40,9 @@ fun EcranAujourdhui(ouvrir: (Ecran) -> Unit, grosTexte: Boolean, surGrosTexte: (
         if (actifs.isEmpty()) Carte { Text("Aucun personnel sous contrat. Ajoutez-en dans l'onglet « Personnel ».", fontSize = 16.sp, color = Gris) }
         actifs.forEach { p ->
             val pt = pointages.find { it.personnelId == p.id }
-            val retard = Calculs.retardMinutes(pt?.arrivee, p.debutMin, tolerance)
-            val travaille = Calculs.jourTravaille(p.jours, aujourdhui.dayOfWeek)
+            val creneau = horaires[p.id]?.pour(aujourdhui.dayOfWeek)           // horaire de CE jour (null = repos)
+            val retard = creneau?.let { Calculs.retardMinutes(pt?.arrivee, it.debutMin, tolerance) } ?: 0
+            val travaille = creneau != null
             Carte(modifier = Modifier.clickable { ouvrir(Ecran.Correction(p.id, aujourdhui.toString())) }) {
                 Text("${p.prenoms} ${p.nom}", fontSize = 20.sp, color = BleuNuit)
                 Text(listOfNotNull(p.fonction, societes.find { it.id == p.societeId }?.nom).joinToString(" · "), fontSize = 14.sp, color = Gris)
@@ -48,7 +50,7 @@ fun EcranAujourdhui(ouvrir: (Ecran) -> Unit, grosTexte: Boolean, surGrosTexte: (
                     pt?.absent == true -> "Absent" + (if (pt.motif.isNotBlank()) " : ${pt.motif}" else "") to Rouge
                     pt?.arrivee != null && pt.depart != null -> "Arrivé à ${Calculs.heure(pt.arrivee)}, parti à ${Calculs.heure(pt.depart)}" to Vert
                     pt?.arrivee != null -> "Arrivé à ${Calculs.heure(pt.arrivee)}" + (if (retard > 0) " — en retard de ${Calculs.duree(retard)}" else "") to (if (retard > 0) Rouge else Vert)
-                    travaille -> "Pas encore arrivé (attendu à ${Calculs.heure(p.debutMin)})" to Gris
+                    travaille -> "Pas encore arrivé (attendu à ${Calculs.heure(creneau?.debutMin)})" to Gris
                     else -> "Jour de repos" to Gris
                 }
                 Text(texte, fontSize = 18.sp, color = couleur, modifier = Modifier.padding(top = 6.dp))

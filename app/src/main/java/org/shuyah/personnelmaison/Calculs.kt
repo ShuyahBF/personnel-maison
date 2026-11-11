@@ -12,8 +12,41 @@ import java.util.Locale
  * Convention : les heures sont des minutes depuis minuit (07:30 = 450) ; les jours de la semaine sont un masque de bits (lundi = bit 0).
  */
 
+/** Plage horaire d'un jour (minutes depuis minuit). */
+data class Creneau(val debutMin: Int, val finMin: Int)
+
+/**
+ * HORAIRES CONTRACTUELS PAR JOUR : chaque jour de la semaine (0 = lundi … 6 = dimanche) peut avoir ses propres heures (samedi plus court, par exemple) ;
+ * un jour absent de la table est un jour de repos.
+ */
+class Horaires(val parJour: Map<Int, Creneau>) {
+    fun pour(jour: DayOfWeek): Creneau? = parJour[jour.value - 1]
+    fun travaille(jour: DayOfWeek) = pour(jour) != null
+    /** Résumé lisible : « Lun–Ven 07:00–17:00 · Sam 07:00–12:00 · repos : Dim » (jours consécutifs de même horaire regroupés). */
+    fun resume(): String {
+        if (parJour.isEmpty()) return "Aucun jour travaillé"
+        val noms = listOf("Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim")
+        val morceaux = mutableListOf<String>()
+        var i = 0
+        while (i < 7) {
+            val c = parJour[i]
+            if (c == null) { i++; continue }
+            var j = i
+            while (j + 1 < 7 && parJour[j + 1] == c) j++
+            morceaux.add((if (j > i) "${noms[i]}–${noms[j]}" else noms[i]) + " ${Calculs.heure(c.debutMin)}–${Calculs.heure(c.finMin)}")
+            i = j + 1
+        }
+        val repos = noms.filterIndexed { k, _ -> parJour[k] == null }
+        return morceaux.joinToString(" · ") + if (repos.isNotEmpty()) " · repos : ${repos.joinToString(", ")}" else ""
+    }
+    companion object {
+        /** Même horaire pour tous les jours cochés du masque (reprise des anciennes fiches). */
+        fun uniforme(debutMin: Int, finMin: Int, jours: Int) = Horaires((0..6).filter { jours and (1 shl it) != 0 }.associateWith { Creneau(debutMin, finMin) })
+    }
+}
+
 /** Ce qui définit les horaires attendus d'un personnel. */
-data class ContratInfo(val debutMin: Int, val finMin: Int, val jours: Int, val dateDebut: LocalDate, val dateFin: LocalDate?)
+data class ContratInfo(val horaires: Horaires, val dateDebut: LocalDate, val dateFin: LocalDate?)
 
 /** Un pointage, réduit à ce que les statistiques utilisent. */
 data class JourPointage(val date: LocalDate, val arrivee: Int?, val depart: Int?, val retardSignale: Boolean, val absent: Boolean)
@@ -71,14 +104,16 @@ object Calculs {
             val d = mois.atDay(jour)
             if (d.isAfter(aujourdhui) || d.isBefore(c.dateDebut) || (c.dateFin != null && d.isAfter(c.dateFin))) continue
             val p = parDate[d]
-            val attendu = jourTravaille(c.jours, d.dayOfWeek)
+            val creneau = c.horaires.pour(d.dayOfWeek)        // horaire de CE jour de la semaine (null = repos)
+            val attendu = creneau != null
             if (attendu) attendus++
             if (p?.arrivee != null) {
                 presences++
-                if (estRetard(p, c.debutMin, tolerance)) { retards++; retardTotal += maxOf(0, p.arrivee - c.debutMin) }
+                val debutContrat = creneau?.debutMin ?: p.arrivee      // jour de repos travaillé : pas de retard possible
+                if (estRetard(p, debutContrat, tolerance)) { retards++; retardTotal += maxOf(0, p.arrivee - debutContrat) }
                 if (p.depart != null) {
                     travaille += maxOf(0, p.depart - p.arrivee)
-                    if (attendu && p.depart < c.finMin - tolerance) anticipes++
+                    if (creneau != null && p.depart < creneau.finMin - tolerance) anticipes++
                 }
             } else if (attendu && (p?.absent == true || d != aujourdhui)) absences++
         }
@@ -95,6 +130,12 @@ object Calculs {
 
     /** Libellé lisible d'une action : « enregistrée », « corrigée », « effacée ». */
     fun actionTexte(action: String): String = when (action) { "CREATION" -> "enregistré"; "MODIFICATION" -> "corrigé"; "SUPPRESSION" -> "effacé"; else -> action.lowercase() }
+
+    /** Net à payer d'un mois : salaire net + bonus − retenues (le total du mois, sans tenir compte des paiements des autres mois). */
+    fun netAPayer(salaireNet: Long, paiements: List<Paiement>, mois: YearMonth): Long {
+        val duMois = paiements.filter { it.date.startsWith(mois.toString()) }
+        return salaireNet + duMois.filter { it.genre == "BONUS" }.sumOf { it.montant } - duMois.filter { it.genre == "RETENUE" }.sumOf { it.montant }
+    }
 
     /** Note moyenne d'une liste de notes (0 si vide), arrondie au dixième. */
     fun moyenne(notes: List<Int>): Double = if (notes.isEmpty()) 0.0 else Math.round(notes.average() * 10) / 10.0

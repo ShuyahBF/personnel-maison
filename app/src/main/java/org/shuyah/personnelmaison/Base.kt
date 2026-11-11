@@ -94,6 +94,57 @@ data class JournalPointage(
     val horodatage: Long = System.currentTimeMillis()
 )
 
+/** Horaire contractuel d'UN jour de la semaine (jour 0 = lundi … 6 = dimanche). Un jour sans ligne = jour de repos. Permet des horaires différents (samedi plus court…). */
+@Entity(tableName = "horaires_personnel", indices = [Index(value = ["personnelId", "jour"], unique = true)])
+data class HorairePersonnel(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val personnelId: Long,
+    val jour: Int,
+    val debutMin: Int,
+    val finMin: Int
+)
+
+/** Numéro de téléphone d'un personnel ou d'une société (3 au plus par fiche, un seul « par défaut »). */
+@Entity(tableName = "numeros", indices = [Index(value = ["proprietaire", "proprietaireId"])])
+data class NumeroTel(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val proprietaire: String,          // « PERSONNEL » ou « SOCIETE »
+    val proprietaireId: Long,
+    val numero: String,
+    val parDefaut: Boolean = false
+)
+
+/** Bonus (prime) payé ou retenue (retrait) faite sur le salaire d'un personnel. */
+@Entity(tableName = "paiements", indices = [Index("personnelId")])
+data class Paiement(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val personnelId: Long,
+    val date: String,                  // AAAA-MM-JJ
+    val genre: String,                 // « BONUS » ou « RETENUE »
+    val montant: Long,                 // FCFA, toujours positif
+    val motif: String = "",
+    val creeLe: Long = System.currentTimeMillis()
+)
+
+/** Tâche habituelle d'un personnel (liste de ses tâches par défaut). */
+@Entity(tableName = "taches", indices = [Index("personnelId")])
+data class Tache(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val personnelId: Long,
+    val libelle: String
+)
+
+/** Document d'une société (contrat de prestations…) : photo ou PDF, enregistré CHIFFRÉ dans le dossier privé de l'application. */
+@Entity(tableName = "documents_societe", indices = [Index("societeId")])
+data class DocumentSociete(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val societeId: Long,
+    val libelle: String,
+    val type: String,                  // « IMAGE » ou « PDF »
+    val fichier: String,               // nom du fichier chiffré
+    val ajouteLe: Long = System.currentTimeMillis()
+)
+
 // ======================= Accès aux données =======================
 
 @Dao
@@ -132,6 +183,39 @@ interface DaoMaison {
     @Query("SELECT * FROM journal_pointages WHERE date >= :depuis ORDER BY horodatage DESC") fun journalDepuis(depuis: String): Flow<List<JournalPointage>>
     @Query("DELETE FROM journal_pointages WHERE personnelId = :id") suspend fun supprimerJournalDe(id: Long)
 
+    // ---- Horaires par jour ----
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun ajouterHoraire(h: HorairePersonnel): Long
+    @Query("DELETE FROM horaires_personnel WHERE personnelId = :id") suspend fun supprimerHoraires(id: Long)
+    @Query("SELECT * FROM horaires_personnel") fun tousHoraires(): Flow<List<HorairePersonnel>>
+    @Query("SELECT * FROM horaires_personnel WHERE personnelId = :id") suspend fun horairesDe(id: Long): List<HorairePersonnel>
+
+    // ---- Numéros de téléphone ----
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun ajouterNumero(n: NumeroTel): Long
+    @Query("DELETE FROM numeros WHERE proprietaire = :proprietaire AND proprietaireId = :id") suspend fun supprimerNumeros(proprietaire: String, id: Long)
+    @Query("SELECT * FROM numeros") fun tousNumeros(): Flow<List<NumeroTel>>
+    @Query("SELECT * FROM numeros WHERE proprietaire = :proprietaire AND proprietaireId = :id ORDER BY parDefaut DESC, id") suspend fun numerosDe(proprietaire: String, id: Long): List<NumeroTel>
+
+    // ---- Bonus et retenues ----
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun ajouterPaiement(p: Paiement): Long
+    @Query("DELETE FROM paiements WHERE id = :id") suspend fun supprimerPaiement(id: Long)
+    @Query("DELETE FROM paiements WHERE personnelId = :id") suspend fun supprimerPaiementsDe(id: Long)
+    @Query("SELECT * FROM paiements WHERE personnelId = :id ORDER BY date DESC, id DESC") fun paiementsDe(id: Long): Flow<List<Paiement>>
+    @Query("SELECT * FROM paiements") fun tousPaiements(): Flow<List<Paiement>>
+
+    // ---- Tâches par défaut ----
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun ajouterTache(t: Tache): Long
+    @Query("DELETE FROM taches WHERE id = :id") suspend fun supprimerTache(id: Long)
+    @Query("DELETE FROM taches WHERE personnelId = :id") suspend fun supprimerTachesDe(id: Long)
+    @Query("SELECT * FROM taches WHERE personnelId = :id ORDER BY id") fun tachesDe(id: Long): Flow<List<Tache>>
+
+    // ---- Documents des sociétés ----
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun ajouterDocument(d: DocumentSociete): Long
+    @Query("DELETE FROM documents_societe WHERE id = :id") suspend fun supprimerDocument(id: Long)
+    @Query("SELECT * FROM documents_societe WHERE societeId = :id ORDER BY ajouteLe DESC") fun documentsDe(id: Long): Flow<List<DocumentSociete>>
+    @Query("SELECT * FROM documents_societe WHERE societeId = :id") suspend fun documentsDeListe(id: Long): List<DocumentSociete>
+    @Query("SELECT * FROM documents_societe WHERE id = :id") suspend fun documentParId(id: Long): DocumentSociete?
+    @Query("DELETE FROM documents_societe WHERE societeId = :id") suspend fun supprimerDocumentsDe(id: Long)
+
     // ---- Notes ----
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun ajouterNote(n: NotePerso): Long
     @Query("SELECT * FROM notes WHERE personnelId = :id ORDER BY horodatage DESC") fun notes(id: Long): Flow<List<NotePerso>>
@@ -146,7 +230,7 @@ interface DaoMaison {
     @Query("DELETE FROM evaluations WHERE id = :id") suspend fun supprimerEvaluation(id: Long)
 }
 
-@Database(entities = [Societe::class, Personnel::class, Pointage::class, NotePerso::class, Evaluation::class, JournalPointage::class], version = 2, exportSchema = true)
+@Database(entities = [Societe::class, Personnel::class, Pointage::class, NotePerso::class, Evaluation::class, JournalPointage::class, HorairePersonnel::class, NumeroTel::class, Paiement::class, Tache::class, DocumentSociete::class], version = 3, exportSchema = true)
 abstract class BaseDonnees : RoomDatabase() { abstract fun dao(): DaoMaison }
 
 /**
@@ -158,6 +242,30 @@ val MIGRATION_1_2 = object : androidx.room.migration.Migration(1, 2) {
     override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
         db.execSQL("CREATE TABLE IF NOT EXISTS `journal_pointages` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `personnelId` INTEGER NOT NULL, `date` TEXT NOT NULL, `genre` TEXT NOT NULL, `heure` INTEGER, `action` TEXT NOT NULL, `horodatage` INTEGER NOT NULL)")
         db.execSQL("CREATE INDEX IF NOT EXISTS `index_journal_pointages_personnelId` ON `journal_pointages` (`personnelId`)")
+    }
+}
+
+/**
+ * Migration 2 → 3 : horaires par jour, numéros de téléphone multiples, bonus et retenues, tâches, documents des sociétés.
+ * Les données existantes sont conservées : les horaires uniformes d'avant deviennent une ligne par jour travaillé, et le téléphone d'avant
+ * devient le numéro « par défaut ».
+ */
+val MIGRATION_2_3 = object : androidx.room.migration.Migration(2, 3) {
+    override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS `horaires_personnel` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `personnelId` INTEGER NOT NULL, `jour` INTEGER NOT NULL, `debutMin` INTEGER NOT NULL, `finMin` INTEGER NOT NULL)")
+        db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_horaires_personnel_personnelId_jour` ON `horaires_personnel` (`personnelId`, `jour`)")
+        db.execSQL("CREATE TABLE IF NOT EXISTS `numeros` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `proprietaire` TEXT NOT NULL, `proprietaireId` INTEGER NOT NULL, `numero` TEXT NOT NULL, `parDefaut` INTEGER NOT NULL)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_numeros_proprietaire_proprietaireId` ON `numeros` (`proprietaire`, `proprietaireId`)")
+        db.execSQL("CREATE TABLE IF NOT EXISTS `paiements` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `personnelId` INTEGER NOT NULL, `date` TEXT NOT NULL, `genre` TEXT NOT NULL, `montant` INTEGER NOT NULL, `motif` TEXT NOT NULL, `creeLe` INTEGER NOT NULL)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_paiements_personnelId` ON `paiements` (`personnelId`)")
+        db.execSQL("CREATE TABLE IF NOT EXISTS `taches` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `personnelId` INTEGER NOT NULL, `libelle` TEXT NOT NULL)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_taches_personnelId` ON `taches` (`personnelId`)")
+        db.execSQL("CREATE TABLE IF NOT EXISTS `documents_societe` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `societeId` INTEGER NOT NULL, `libelle` TEXT NOT NULL, `type` TEXT NOT NULL, `fichier` TEXT NOT NULL, `ajouteLe` INTEGER NOT NULL)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_documents_societe_societeId` ON `documents_societe` (`societeId`)")
+        // Reprise des données : un horaire par jour travaillé (jours = masque de bits, lundi = bit 0) et le téléphone en numéro par défaut
+        db.execSQL("INSERT INTO horaires_personnel (personnelId, jour, debutMin, finMin) SELECT p.id, d.j, p.debutMin, p.finMin FROM personnels p JOIN (SELECT 0 AS j UNION SELECT 1 UNION SELECT 2 UNION SELECT 3 UNION SELECT 4 UNION SELECT 5 UNION SELECT 6) d ON ((p.jours >> d.j) & 1) = 1")
+        db.execSQL("INSERT INTO numeros (proprietaire, proprietaireId, numero, parDefaut) SELECT 'PERSONNEL', id, TRIM(telephone), 1 FROM personnels WHERE TRIM(telephone) <> ''")
+        db.execSQL("INSERT INTO numeros (proprietaire, proprietaireId, numero, parDefaut) SELECT 'SOCIETE', id, TRIM(telephone), 1 FROM societes WHERE TRIM(telephone) <> ''")
     }
 }
 
@@ -178,6 +286,6 @@ object Base {
             prefs.edit().putString("cle_base", cle).apply()
         }
         return Room.databaseBuilder(c, BaseDonnees::class.java, "personnel_maison.db")
-            .openHelperFactory(SupportFactory(SQLiteDatabase.getBytes(cle.toCharArray()))).addMigrations(MIGRATION_1_2).build()
+            .openHelperFactory(SupportFactory(SQLiteDatabase.getBytes(cle.toCharArray()))).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build()
     }
 }
