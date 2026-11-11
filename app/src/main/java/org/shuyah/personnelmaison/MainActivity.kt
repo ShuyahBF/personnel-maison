@@ -1,0 +1,96 @@
+package org.shuyah.personnelmaison
+
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.lifecycle.lifecycleScope
+
+/** Les écrans de l'application. Les quatre premiers sont les onglets du bas ; les autres s'ouvrent par-dessus. */
+sealed class Ecran {
+    object Aujourdhui : Ecran()
+    object Personnels : Ecran()
+    object Societes : Ecran()
+    object Stats : Ecran()
+    data class FichePersonnel(val id: Long) : Ecran()
+    data class FormPersonnel(val id: Long?) : Ecran()
+    data class Piece(val id: Long) : Ecran()
+    data class FicheSociete(val id: Long) : Ecran()
+    data class FormSociete(val id: Long?) : Ecran()
+    data class FormEvaluation(val societeId: Long, val id: Long?) : Ecran()
+}
+
+class MainActivity : ComponentActivity() {
+    override fun onCreate(b: Bundle?) {
+        super.onCreate(b)
+        Presence.demarrer(lifecycleScope)
+        setContent { MaterialTheme { Racine() } }
+    }
+}
+
+@Composable
+private fun Racine() {
+    var onglet by remember { mutableStateOf<Ecran>(Ecran.Aujourdhui) }
+    val pile = remember { mutableStateListOf<Ecran>() }               // écrans ouverts par-dessus l'onglet
+    fun ouvrir(e: Ecran) { if (e in listOf(Ecran.Aujourdhui, Ecran.Personnels, Ecran.Societes, Ecran.Stats)) { pile.clear(); onglet = e } else pile.add(e) }
+    fun retour() { if (pile.isNotEmpty()) pile.removeAt(pile.lastIndex) }
+    BackHandler(enabled = pile.isNotEmpty()) { retour() }
+    val courant = pile.lastOrNull() ?: onglet
+
+    Scaffold(containerColor = Fond, bottomBar = {
+        if (pile.isEmpty()) NavigationBar(containerColor = Color.White) {
+            listOf(Triple(Ecran.Aujourdhui, Icons.Filled.Today, "Aujourd'hui"), Triple(Ecran.Personnels, Icons.Filled.Groups, "Personnel"),
+                Triple(Ecran.Societes, Icons.Filled.Business, "Sociétés"), Triple(Ecran.Stats, Icons.Filled.BarChart, "Bilans")).forEach { (e, icone, nom) ->
+                NavigationBarItem(onglet == e, { ouvrir(e) }, { Icon(icone, nom) }, label = { Text(nom, fontSize = 11.sp) })
+            }
+        }
+    }) { marge ->
+        // Bords de l'écran : barre d'état toujours ; barre de navigation du téléphone seulement quand l'onglet du bas n'est pas affiché
+        Box(Modifier.fillMaxSize().padding(marge).statusBarsPadding().then(if (pile.isNotEmpty()) Modifier.navigationBarsPadding() else Modifier)) {
+            when (courant) {
+                Ecran.Aujourdhui -> EcranAujourdhui(::ouvrir)
+                Ecran.Personnels -> EcranListePersonnel(::ouvrir)
+                Ecran.Societes -> EcranListeSocietes(::ouvrir)
+                Ecran.Stats -> EcranStats(::ouvrir)
+                is Ecran.FichePersonnel -> EcranFichePersonnel(courant.id, ::ouvrir, ::retour)
+                is Ecran.FormPersonnel -> EcranFormPersonnel(courant.id, ::retour)
+                is Ecran.Piece -> EcranPiece(courant.id, ::retour)
+                is Ecran.FicheSociete -> EcranFicheSociete(courant.id, ::ouvrir, ::retour)
+                is Ecran.FormSociete -> EcranFormSociete(courant.id, ::retour)
+                is Ecran.FormEvaluation -> EcranFormEvaluation(courant.societeId, courant.id, ::retour)
+            }
+        }
+    }
+}
+
+/** Titre d'écran avec, à droite, des tuiles d'action éventuelles. */
+@Composable
+fun Titre(texte: String, retour: (() -> Unit)? = null, actions: @Composable RowScope.() -> Unit = {}) =
+    Row(Modifier.fillMaxWidth().background(BleuNuit).padding(horizontal = 12.dp, vertical = 12.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+        if (retour != null) Icon(Icons.Filled.ArrowBack, "Retour", tint = Color.White, modifier = Modifier.size(28.dp).padding(end = 8.dp).clickable { retour() })
+        Text(texte, color = Color.White, fontSize = 18.sp, modifier = Modifier.weight(1f))
+        actions()
+    }
+
+/** Conteneur défilant des écrans (marge et espacement communs). */
+@Composable
+fun Page(titre: String, retour: (() -> Unit)? = null, actions: @Composable RowScope.() -> Unit = {}, contenu: @Composable ColumnScope.() -> Unit) = Column(Modifier.fillMaxSize()) {
+    Titre(titre, retour, actions)
+    Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        contenu()
+        Text(Version.libelle(), fontSize = 11.sp, color = Gris, modifier = Modifier.padding(top = 6.dp, bottom = 16.dp))
+    }
+}
