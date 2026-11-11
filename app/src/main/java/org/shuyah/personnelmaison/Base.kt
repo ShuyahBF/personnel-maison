@@ -145,6 +145,29 @@ data class DocumentSociete(
     val ajouteLe: Long = System.currentTimeMillis()
 )
 
+/**
+ * PROFIL DE L'UTILISATEUR (une seule fiche, id = 1) : identité, adresse, position GPS de la maison, personne à prévenir, remarques.
+ * Ses numéros de téléphone (3 au plus) sont dans la table des numéros, propriétaire « UTILISATEUR ». Reste sur le téléphone, jamais envoyé.
+ */
+@Entity(tableName = "profil")
+data class ProfilUtilisateur(
+    @PrimaryKey val id: Long = 1,
+    val nom: String = "",
+    val prenoms: String = "",
+    val email: String = "",
+    val adresse: String = "",
+    val quartier: String = "",          // quartier, secteur ou village
+    val ville: String = "",
+    val repere: String = "",            // point de repère (« derrière le marché », « portail bleu »…) : très utile pour être retrouvé
+    val latitude: Double? = null,       // position GPS de la maison
+    val longitude: Double? = null,
+    val precisionM: Float? = null,      // précision de la position, en mètres
+    val geolocaliseLe: Long? = null,    // moment où la position a été relevée
+    val urgenceNom: String = "",        // personne à prévenir en cas d'urgence
+    val urgenceTelephone: String = "",
+    val remarques: String = ""
+)
+
 // ======================= Accès aux données =======================
 
 @Dao
@@ -182,6 +205,11 @@ interface DaoMaison {
     @Query("SELECT * FROM journal_pointages WHERE personnelId = :id AND date = :date ORDER BY horodatage DESC") fun journal(id: Long, date: String): Flow<List<JournalPointage>>
     @Query("SELECT * FROM journal_pointages WHERE date >= :depuis ORDER BY horodatage DESC") fun journalDepuis(depuis: String): Flow<List<JournalPointage>>
     @Query("DELETE FROM journal_pointages WHERE personnelId = :id") suspend fun supprimerJournalDe(id: Long)
+
+    // ---- Profil de l'utilisateur ----
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun enregistrerProfil(p: ProfilUtilisateur): Long
+    @Query("SELECT * FROM profil WHERE id = 1") fun profil(): Flow<ProfilUtilisateur?>
+    @Query("SELECT * FROM profil WHERE id = 1") suspend fun profilUneFois(): ProfilUtilisateur?
 
     // ---- Horaires par jour ----
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun ajouterHoraire(h: HorairePersonnel): Long
@@ -230,7 +258,7 @@ interface DaoMaison {
     @Query("DELETE FROM evaluations WHERE id = :id") suspend fun supprimerEvaluation(id: Long)
 }
 
-@Database(entities = [Societe::class, Personnel::class, Pointage::class, NotePerso::class, Evaluation::class, JournalPointage::class, HorairePersonnel::class, NumeroTel::class, Paiement::class, Tache::class, DocumentSociete::class], version = 3, exportSchema = true)
+@Database(entities = [Societe::class, Personnel::class, Pointage::class, NotePerso::class, Evaluation::class, JournalPointage::class, HorairePersonnel::class, NumeroTel::class, Paiement::class, Tache::class, DocumentSociete::class, ProfilUtilisateur::class], version = 4, exportSchema = true)
 abstract class BaseDonnees : RoomDatabase() { abstract fun dao(): DaoMaison }
 
 /**
@@ -269,6 +297,13 @@ val MIGRATION_2_3 = object : androidx.room.migration.Migration(2, 3) {
     }
 }
 
+/** Migration 3 → 4 : ajout du profil de l'utilisateur. */
+val MIGRATION_3_4 = object : androidx.room.migration.Migration(3, 4) {
+    override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS `profil` (`id` INTEGER NOT NULL, `nom` TEXT NOT NULL, `prenoms` TEXT NOT NULL, `email` TEXT NOT NULL, `adresse` TEXT NOT NULL, `quartier` TEXT NOT NULL, `ville` TEXT NOT NULL, `repere` TEXT NOT NULL, `latitude` REAL, `longitude` REAL, `precisionM` REAL, `geolocaliseLe` INTEGER, `urgenceNom` TEXT NOT NULL, `urgenceTelephone` TEXT NOT NULL, `remarques` TEXT NOT NULL, PRIMARY KEY(`id`))")
+    }
+}
+
 object Base {
     private var instance: BaseDonnees? = null
 
@@ -286,6 +321,6 @@ object Base {
             prefs.edit().putString("cle_base", cle).apply()
         }
         return Room.databaseBuilder(c, BaseDonnees::class.java, "personnel_maison.db")
-            .openHelperFactory(SupportFactory(SQLiteDatabase.getBytes(cle.toCharArray()))).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build()
+            .openHelperFactory(SupportFactory(SQLiteDatabase.getBytes(cle.toCharArray()))).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build()
     }
 }

@@ -2,6 +2,12 @@
 
 Suivi des **arrivées et départs du personnel de maison** (aide ménagère, gardien, laveur de véhicule, cuisinier(ère), chauffeur…), fiche de chaque personne, sociétés de placement, bilans et évaluations. Tout reste **sur le téléphone, chiffré**.
 
+## Version 1.4 — Mon profil
+- Nouvel onglet **Profil** : nom, prénoms, **3 numéros de téléphone** (un par défaut), e-mail, **adresse** (rue, quartier, ville, **point de repère**), **position GPS** de la maison, **personne à prévenir en cas d'urgence** et remarques.
+- **Géolocalisation** : bouton « Ma position » (autorisation demandée seulement à ce moment, GPS ou réseau, sans Google Play Services) ; affichage des coordonnées et de la précision, **Voir sur la carte**, **Partager** le lien, **Effacer**.
+- Jauge « Profil complété à X % » ; l'accueil invite à compléter le profil tant que le nom est vide.
+- Le profil reste sur le téléphone (base chiffrée) et n'est **jamais envoyé** ; base en version 4, migration automatique.
+
 ## Version 1.3
 - **Téléphones** : jusqu'à **3 numéros** par personnel et par société, un **numéro par défaut**, et un pictogramme **Appeler** (ouvre le clavier d'appel du téléphone avec le numéro) et **Copier**.
 - **Horaires par jour** : chaque jour de la semaine a ses propres heures (samedi plus court, jour de repos…) ; retards, départs anticipés et bilans utilisent l'horaire DU JOUR. Les anciennes fiches sont converties automatiquement.

@@ -137,6 +137,20 @@ object Calculs {
         return salaireNet + duMois.filter { it.genre == "BONUS" }.sumOf { it.montant } - duMois.filter { it.genre == "RETENUE" }.sumOf { it.montant }
     }
 
+    /**
+     * Taux de complétude du profil (0 à 100) : 9 éléments utiles — nom, prénoms, téléphone, adresse, ville, point de repère, position GPS,
+     * e-mail, personne à prévenir. Sert à encourager l'utilisateur à compléter sa fiche.
+     */
+    fun completudeProfil(p: ProfilUtilisateur?, nbNumeros: Int): Int {
+        if (p == null) return if (nbNumeros > 0) 11 else 0
+        val elements = listOf(p.nom.isNotBlank(), p.prenoms.isNotBlank(), nbNumeros > 0, p.adresse.isNotBlank(), p.ville.isNotBlank(), p.repere.isNotBlank(),
+            p.latitude != null && p.longitude != null, p.email.isNotBlank(), p.urgenceNom.isNotBlank() && p.urgenceTelephone.isNotBlank())
+        return elements.count { it } * 100 / elements.size
+    }
+
+    /** « 12.37123, -1.51980 » (5 décimales, environ 1 mètre). */
+    fun coordonnees(lat: Double, lon: Double): String = "%.5f, %.5f".format(java.util.Locale.US, lat, lon)
+
     /** Note moyenne d'une liste de notes (0 si vide), arrondie au dixième. */
     fun moyenne(notes: List<Int>): Double = if (notes.isEmpty()) 0.0 else Math.round(notes.average() * 10) / 10.0
 

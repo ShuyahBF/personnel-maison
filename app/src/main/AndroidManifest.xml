@@ -3,6 +3,10 @@
     <!-- Signal de présence à SAWALI (règle 4) : nom de l'application, version, modèle du téléphone ; aucune donnée personnelle -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <!-- Position GPS de la maison (profil de l'utilisateur) : demandée seulement quand on appuie sur « Ma position » ; jamais envoyée -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-feature android:name="android.hardware.location" android:required="false" />
     <application android:allowBackup="false" android:icon="@mipmap/ic_launcher" android:label="@string/app_name" android:theme="@style/Theme.PersonnelMaison">
         <activity android:name=".MainActivity" android:exported="true" android:windowSoftInputMode="adjustResize" android:configChanges="orientation|screenSize|keyboardHidden">
             <intent-filter>

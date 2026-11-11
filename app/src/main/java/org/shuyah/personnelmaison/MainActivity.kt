@@ -25,6 +25,7 @@ sealed class Ecran {
     object Personnels : Ecran()
     object Societes : Ecran()
     object Stats : Ecran()
+    object Profil : Ecran()
     object Noter : Ecran()
     object Corrections : Ecran()
     data class Correction(val personnelId: Long, val date: String) : Ecran()
@@ -55,7 +56,7 @@ private fun Racine() {
     androidx.compose.runtime.CompositionLocalProvider(androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(densite.density, densite.fontScale * (if (grosTexte) 1.25f else 1f))) {
     var onglet by remember { mutableStateOf<Ecran>(Ecran.Aujourdhui) }
     val pile = remember { mutableStateListOf<Ecran>() }               // écrans ouverts par-dessus l'onglet
-    fun ouvrir(e: Ecran) { if (e in listOf(Ecran.Aujourdhui, Ecran.Personnels, Ecran.Societes, Ecran.Stats)) { pile.clear(); onglet = e } else pile.add(e) }
+    fun ouvrir(e: Ecran) { if (e in listOf(Ecran.Aujourdhui, Ecran.Personnels, Ecran.Societes, Ecran.Stats, Ecran.Profil)) { pile.clear(); onglet = e } else pile.add(e) }
     fun retour() { if (pile.isNotEmpty()) pile.removeAt(pile.lastIndex) }
     BackHandler(enabled = pile.isNotEmpty()) { retour() }
     val courant = pile.lastOrNull() ?: onglet
@@ -63,7 +64,7 @@ private fun Racine() {
     Scaffold(containerColor = Fond, bottomBar = {
         if (pile.isEmpty()) NavigationBar(containerColor = Color.White) {
             listOf(Triple(Ecran.Aujourdhui, Icons.Filled.Today, "Aujourd'hui"), Triple(Ecran.Personnels, Icons.Filled.Groups, "Personnel"),
-                Triple(Ecran.Societes, Icons.Filled.Business, "Sociétés"), Triple(Ecran.Stats, Icons.Filled.BarChart, "Bilans")).forEach { (e, icone, nom) ->
+                Triple(Ecran.Societes, Icons.Filled.Business, "Sociétés"), Triple(Ecran.Stats, Icons.Filled.BarChart, "Bilans"), Triple(Ecran.Profil, Icons.Filled.AccountCircle, "Profil")).forEach { (e, icone, nom) ->
                 NavigationBarItem(onglet == e, { ouvrir(e) }, { Icon(icone, nom) }, label = { Text(nom, fontSize = 11.sp) })
             }
         }
@@ -78,6 +79,7 @@ private fun Racine() {
                 Ecran.Personnels -> EcranListePersonnel(::ouvrir)
                 Ecran.Societes -> EcranListeSocietes(::ouvrir)
                 Ecran.Stats -> EcranStats(::ouvrir)
+                Ecran.Profil -> EcranProfil()
                 is Ecran.FichePersonnel -> EcranFichePersonnel(courant.id, ::ouvrir, ::retour)
                 is Ecran.FormPersonnel -> EcranFormPersonnel(courant.id, ::retour)
                 is Ecran.Piece -> EcranPiece(courant.id, ::retour)

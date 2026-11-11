@@ -114,4 +114,14 @@ class CalculsTest {
         assertEquals(106000L, Calculs.netAPayer(100000, p, YearMonth.of(2026, 11)))
         assertEquals(100000L, Calculs.netAPayer(100000, emptyList(), YearMonth.of(2026, 11)))
     }
+
+    @Test fun completudeDuProfil() {
+        assertEquals(0, Calculs.completudeProfil(null, 0))
+        assertEquals(0, Calculs.completudeProfil(ProfilUtilisateur(), 0))
+        val complet = ProfilUtilisateur(nom = "BADINI", prenoms = "Awa", email = "awa.badini@gmail.com", adresse = "Rue 1", ville = "Ouagadougou", repere = "Marché",
+            latitude = 12.37, longitude = -1.52, urgenceNom = "Salif", urgenceTelephone = "70000000")
+        assertEquals(100, Calculs.completudeProfil(complet, 2))
+        assertEquals(88, Calculs.completudeProfil(complet.copy(email = ""), 2))
+        assertEquals("12.37123, -1.51980", Calculs.coordonnees(12.37123, -1.5198))
+    }
 }

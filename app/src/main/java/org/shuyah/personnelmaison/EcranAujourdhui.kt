@@ -28,6 +28,7 @@ fun EcranAujourdhui(ouvrir: (Ecran) -> Unit, grosTexte: Boolean, surGrosTexte: (
     val personnels by dao.personnel().collectAsState(emptyList())
     val societes by dao.societes().collectAsState(emptyList())
     val pointages by dao.pointagesDuJour(aujourdhui.toString()).collectAsState(emptyList())
+    val profil by dao.profil().collectAsState(null)
     val tolerance = Reglages.tolerance(c)
     val horaires = horairesDe(dao, personnels)
     val actifs = personnels.filter { p -> try { !LocalDate.parse(p.dateDebut).isAfter(aujourdhui) && (p.dateFin == null || !LocalDate.parse(p.dateFin).isBefore(aujourdhui)) } catch (e: Exception) { true } }
@@ -36,6 +37,9 @@ fun EcranAujourdhui(ouvrir: (Ecran) -> Unit, grosTexte: Boolean, surGrosTexte: (
         Text(Calculs.dateLongue(aujourdhui), fontSize = 20.sp, color = BleuNuit)
         GrosBouton(Icons.Filled.AccessTime, "Noter une arrivée ou un départ", Vert) { ouvrir(Ecran.Noter) }
         GrosBouton(Icons.Filled.EditNote, "Corriger un pointage", Bleu) { ouvrir(Ecran.Corrections) }
+        if (profil?.nom.isNullOrBlank()) Carte(modifier = Modifier.clickable { ouvrir(Ecran.Profil) }) {
+            Text("Complétez votre profil : nom, téléphone, adresse, position…", fontSize = 15.sp, color = Bleu)
+        }
         Text("Aujourd'hui", fontSize = 20.sp, color = BleuNuit, modifier = Modifier.padding(top = 6.dp))
         if (actifs.isEmpty()) Carte { Text("Aucun personnel sous contrat. Ajoutez-en dans l'onglet « Personnel ».", fontSize = 16.sp, color = Gris) }
         actifs.forEach { p ->
