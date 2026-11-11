@@ -25,6 +25,9 @@ sealed class Ecran {
     object Personnels : Ecran()
     object Societes : Ecran()
     object Stats : Ecran()
+    object Noter : Ecran()
+    object Corrections : Ecran()
+    data class Correction(val personnelId: Long, val date: String) : Ecran()
     data class FichePersonnel(val id: Long) : Ecran()
     data class FormPersonnel(val id: Long?) : Ecran()
     data class Piece(val id: Long) : Ecran()
@@ -43,6 +46,12 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun Racine() {
+    val c = androidx.compose.ui.platform.LocalContext.current
+    // « Texte plus grand » : agrandit tout le texte de l'application (par défaut oui)
+    var grosTexte by remember { mutableStateOf(Reglages.grosTexte(c)) }
+    val surGrosTexte: (Boolean) -> Unit = { grosTexte = it; Reglages.grosTexte(c, it) }
+    val densite = androidx.compose.ui.platform.LocalDensity.current
+    androidx.compose.runtime.CompositionLocalProvider(androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(densite.density, densite.fontScale * (if (grosTexte) 1.25f else 1f))) {
     var onglet by remember { mutableStateOf<Ecran>(Ecran.Aujourdhui) }
     val pile = remember { mutableStateListOf<Ecran>() }               // écrans ouverts par-dessus l'onglet
     fun ouvrir(e: Ecran) { if (e in listOf(Ecran.Aujourdhui, Ecran.Personnels, Ecran.Societes, Ecran.Stats)) { pile.clear(); onglet = e } else pile.add(e) }
@@ -61,7 +70,10 @@ private fun Racine() {
         // Bords de l'écran : barre d'état toujours ; barre de navigation du téléphone seulement quand l'onglet du bas n'est pas affiché
         Box(Modifier.fillMaxSize().padding(marge).statusBarsPadding().then(if (pile.isNotEmpty()) Modifier.navigationBarsPadding() else Modifier)) {
             when (courant) {
-                Ecran.Aujourdhui -> EcranAujourdhui(::ouvrir)
+                Ecran.Aujourdhui -> EcranAujourdhui(::ouvrir, grosTexte, surGrosTexte)
+                Ecran.Noter -> EcranNoter(::retour)
+                Ecran.Corrections -> EcranCorrections(::ouvrir, ::retour)
+                is Ecran.Correction -> EcranCorrection(courant.personnelId, courant.date, ::retour)
                 Ecran.Personnels -> EcranListePersonnel(::ouvrir)
                 Ecran.Societes -> EcranListeSocietes(::ouvrir)
                 Ecran.Stats -> EcranStats(::ouvrir)
@@ -73,6 +85,7 @@ private fun Racine() {
                 is Ecran.FormEvaluation -> EcranFormEvaluation(courant.societeId, courant.id, ::retour)
             }
         }
+    }
     }
 }
 

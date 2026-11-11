@@ -2,6 +2,12 @@
 
 Suivi des **arrivées et départs du personnel de maison** (aide ménagère, gardien, laveur de véhicule, cuisinier(ère), chauffeur…), fiche de chaque personne, sociétés de placement, bilans et évaluations. Tout reste **sur le téléphone, chiffré**.
 
+## Pointage très simple (version 1.1, pour personnes âgées ou à vue réduite)
+- **Un grand bouton** « Noter une arrivée ou un départ » → **3 questions, une par écran** : *Qui ?* (clic sur le nom) → *Arrivée ou départ ?* (deux gros boutons, le plus probable est « proposé ») → *Quand ?* (date et heure **proposées d'après l'horloge du téléphone**, modifiables : ± 5 min, heure, date) → vérification → **Enregistrer**.
+- **Horodatage** : chaque création, modification ou suppression est enregistrée dans un **journal** avec la date et l'heure de l'enregistrement (« corrigé le 11/11/2026 à 14:32 »).
+- **Rappel d'un pointage pour correction** : bouton « Corriger un pointage » (60 derniers jours), changer ou effacer l'arrivée et le départ, retard signalé, absence, motif, historique horodaté de la journée.
+- **Texte plus grand** (activé par défaut) pour toute l'application ; boutons pleine largeur avec pictogramme ET texte.
+
 ## Fonctions (version 1.0)
 - **Fiche du personnel** : nom, prénoms, fonction (liste + « Autre… »), société, dates de début et de fin, horaires contractuels et jours travaillés, salaire net à payer, téléphone, **copie de la pièce d'identité avec OCR** (le texte est lu sur le téléphone et propose le nom et les prénoms ; appui sur une ligne lue pour la placer dans « Nom » ou « Prénoms »), **notes et remarques horodatées**.
 - **Sociétés de placement** : coordonnées et **numéros Orange Money, Moov Money et Telecel Money** (copier / appeler). Ces numéros sont sur la fiche de la société, pas du personnel.

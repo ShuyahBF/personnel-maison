@@ -85,6 +85,17 @@ object Calculs {
         return StatsMois(attendus, presences, absences, retards, retardTotal, travaille, anticipes)
     }
 
+    /** Action à journaliser quand une heure passe de `ancien` à `nouveau` : CREATION, MODIFICATION, SUPPRESSION, ou null si rien ne change. */
+    fun actionJournal(ancien: Int?, nouveau: Int?): String? = when {
+        ancien == nouveau -> null
+        ancien == null -> "CREATION"
+        nouveau == null -> "SUPPRESSION"
+        else -> "MODIFICATION"
+    }
+
+    /** Libellé lisible d'une action : « enregistrée », « corrigée », « effacée ». */
+    fun actionTexte(action: String): String = when (action) { "CREATION" -> "enregistré"; "MODIFICATION" -> "corrigé"; "SUPPRESSION" -> "effacé"; else -> action.lowercase() }
+
     /** Note moyenne d'une liste de notes (0 si vide), arrondie au dixième. */
     fun moyenne(notes: List<Int>): Double = if (notes.isEmpty()) 0.0 else Math.round(notes.average() * 10) / 10.0
 

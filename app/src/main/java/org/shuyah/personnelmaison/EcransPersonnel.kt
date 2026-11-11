@@ -125,7 +125,7 @@ fun EcranFichePersonnel(id: Long, ouvrir: (Ecran) -> Unit, retour: () -> Unit) {
     if (suppression) Confirmation("Supprimer cette fiche ?", "La fiche, ses pointages, ses notes et la copie de la pièce d'identité seront effacés définitivement.", {
         scope.launch {
             Pieces.supprimer(c, personnel.pieceChemin)
-            dao.supprimerPointagesDe(id); dao.supprimerNotesDe(id); dao.supprimerPersonnel(id)
+            dao.supprimerPointagesDe(id); dao.supprimerJournalDe(id); dao.supprimerNotesDe(id); dao.supprimerPersonnel(id)
         }
         suppression = false; retour()
     }, { suppression = false })

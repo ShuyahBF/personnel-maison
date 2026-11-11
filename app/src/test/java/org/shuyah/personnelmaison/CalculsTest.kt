@@ -78,4 +78,12 @@ class CalculsTest {
         val d = AnalyseIdentite.analyser("texte sans rapport")
         assertNull(d.nom); assertNull(d.prenoms)
     }
+
+    @Test fun actionsDuJournal() {
+        assertEquals("CREATION", Calculs.actionJournal(null, 425))
+        assertEquals("MODIFICATION", Calculs.actionJournal(425, 430))
+        assertEquals("SUPPRESSION", Calculs.actionJournal(425, null))
+        assertNull(Calculs.actionJournal(425, 425)); assertNull(Calculs.actionJournal(null, null))
+        assertEquals("corrigé", Calculs.actionTexte("MODIFICATION"))
+    }
 }

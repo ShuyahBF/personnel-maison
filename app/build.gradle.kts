@@ -17,8 +17,8 @@ android {
         minSdk = 26
         targetSdk = 35
         // Règle de version : VERSION +1 à chaque livraison (voir Version.kt).
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.1"
         // Nom du fichier livré : personnel-maison-<version>-debug.apk (copié ensuite en personnel-maison-<version>.apk)
         setProperty("archivesBaseName", "personnel-maison-$versionName")
         // Date et heure de compilation, affichées en bas de l'écran principal.
@@ -32,6 +32,9 @@ android {
     kotlinOptions { jvmTarget = "17" }
     buildFeatures { compose = true; buildConfig = true }
 }
+
+// Schéma de la base exporté à chaque version (sert à écrire et vérifier les migrations)
+ksp { arg("room.schemaLocation", "$projectDir/schemas") }
 
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2024.12.01")

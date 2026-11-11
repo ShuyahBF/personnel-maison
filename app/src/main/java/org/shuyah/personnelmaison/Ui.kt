@@ -144,3 +144,22 @@ fun Confirmation(titre: String, message: String, surConfirmation: () -> Unit, su
 
 /** Fonctions proposées dans la liste déroulante (plus « Autre… »). */
 val FONCTIONS = listOf("Aide ménagère", "Gardien", "Laveur de véhicule", "Cuisinier(ère)", "Chauffeur", "Jardinier", "Nounou", "Lingère")
+
+/**
+ * GROS BOUTON pour les personnes âgées ou à vue réduite : pleine largeur, hauteur confortable, pictogramme ET texte en grand, contraste fort.
+ * Utilisé dans tout le parcours de pointage (une seule question à la fois, un seul geste par écran).
+ */
+@Composable
+fun GrosBouton(icone: ImageVector, texte: String, couleur: Color = Bleu, actif: Boolean = true, sousTexte: String? = null, surAppui: () -> Unit) =
+    Row(Modifier.fillMaxWidth().heightIn(min = 76.dp).clip(RoundedCornerShape(18.dp)).background(if (actif) couleur else Color(0xFFCBD5E1))
+        .clickable(enabled = actif) { surAppui() }.padding(horizontal = 18.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(icone, null, tint = Color.White, modifier = Modifier.size(38.dp))
+        Column(Modifier.padding(start = 16.dp)) {
+            Text(texte, color = Color.White, fontSize = 22.sp, lineHeight = 26.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+            if (sousTexte != null) Text(sousTexte, color = Color.White.copy(alpha = 0.92f), fontSize = 15.sp)
+        }
+    }
+
+/** Grand titre de question (« Qui ? », « Arrivée ou départ ? »…). */
+@Composable
+fun Question(texte: String) = Text(texte, fontSize = 28.sp, lineHeight = 32.sp, color = BleuNuit, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, modifier = Modifier.padding(vertical = 8.dp))

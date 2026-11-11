@@ -79,6 +79,21 @@ data class Evaluation(
     val creeLe: Long = System.currentTimeMillis()
 )
 
+/**
+ * JOURNAL DES POINTAGES : chaque création, modification ou suppression d'une heure d'arrivée, de départ, d'une absence ou d'un retard laisse une
+ * ligne HORODATÉE (moment où l'utilisateur a enregistré, pas l'heure du pointage). Permet de rappeler un pointage pour le corriger et de savoir qui a changé quoi, quand.
+ */
+@Entity(tableName = "journal_pointages", indices = [Index("personnelId")])
+data class JournalPointage(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val personnelId: Long,
+    val date: String,                 // jour du pointage (AAAA-MM-JJ)
+    val genre: String,                // ARRIVEE, DEPART, ABSENCE ou RETARD
+    val heure: Int?,                  // heure enregistrée (minutes depuis minuit), null pour une suppression ou une absence
+    val action: String,               // CREATION, MODIFICATION ou SUPPRESSION
+    val horodatage: Long = System.currentTimeMillis()
+)
+
 // ======================= Accès aux données =======================
 
 @Dao
@@ -109,6 +124,14 @@ interface DaoMaison {
     @Query("SELECT * FROM pointages WHERE date >= :debut AND date <= :fin ORDER BY date") fun pointagesPeriode(debut: String, fin: String): Flow<List<Pointage>>
     @Query("DELETE FROM pointages WHERE personnelId = :id AND date = :date") suspend fun supprimerPointage(id: Long, date: String)
 
+    // ---- Journal et rappel des pointages ----
+    @Query("SELECT * FROM pointages WHERE personnelId = :id AND date = :date") suspend fun pointage(id: Long, date: String): Pointage?
+    @Query("SELECT * FROM pointages WHERE date >= :depuis ORDER BY date DESC, id DESC LIMIT 80") fun derniersPointages(depuis: String): Flow<List<Pointage>>
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun ajouterJournal(j: JournalPointage): Long
+    @Query("SELECT * FROM journal_pointages WHERE personnelId = :id AND date = :date ORDER BY horodatage DESC") fun journal(id: Long, date: String): Flow<List<JournalPointage>>
+    @Query("SELECT * FROM journal_pointages WHERE date >= :depuis ORDER BY horodatage DESC") fun journalDepuis(depuis: String): Flow<List<JournalPointage>>
+    @Query("DELETE FROM journal_pointages WHERE personnelId = :id") suspend fun supprimerJournalDe(id: Long)
+
     // ---- Notes ----
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun ajouterNote(n: NotePerso): Long
     @Query("SELECT * FROM notes WHERE personnelId = :id ORDER BY horodatage DESC") fun notes(id: Long): Flow<List<NotePerso>>
@@ -123,13 +146,21 @@ interface DaoMaison {
     @Query("DELETE FROM evaluations WHERE id = :id") suspend fun supprimerEvaluation(id: Long)
 }
 
-@Database(entities = [Societe::class, Personnel::class, Pointage::class, NotePerso::class, Evaluation::class], version = 1, exportSchema = false)
+@Database(entities = [Societe::class, Personnel::class, Pointage::class, NotePerso::class, Evaluation::class, JournalPointage::class], version = 2, exportSchema = true)
 abstract class BaseDonnees : RoomDatabase() { abstract fun dao(): DaoMaison }
 
 /**
  * Ouverture de la base. Elle est CHIFFRÉE (SQLCipher) : la clé est créée une fois, au hasard, et gardée dans les préférences chiffrées
  * par le Keystore Android. Sans le téléphone déverrouillé, les données (identités, salaires, notes) ne sont pas lisibles.
  */
+/** Migration 1 → 2 : ajout du journal des pointages (les données existantes sont conservées). */
+val MIGRATION_1_2 = object : androidx.room.migration.Migration(1, 2) {
+    override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS `journal_pointages` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `personnelId` INTEGER NOT NULL, `date` TEXT NOT NULL, `genre` TEXT NOT NULL, `heure` INTEGER, `action` TEXT NOT NULL, `horodatage` INTEGER NOT NULL)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_journal_pointages_personnelId` ON `journal_pointages` (`personnelId`)")
+    }
+}
+
 object Base {
     private var instance: BaseDonnees? = null
 
@@ -147,6 +178,6 @@ object Base {
             prefs.edit().putString("cle_base", cle).apply()
         }
         return Room.databaseBuilder(c, BaseDonnees::class.java, "personnel_maison.db")
-            .openHelperFactory(SupportFactory(SQLiteDatabase.getBytes(cle.toCharArray()))).build()
+            .openHelperFactory(SupportFactory(SQLiteDatabase.getBytes(cle.toCharArray()))).addMigrations(MIGRATION_1_2).build()
     }
 }
