@@ -21,7 +21,7 @@ import java.time.YearMonth
  * Les nombres sont alignés à droite (règle du propriétaire sur les tableaux). La tolérance de retard se règle ici.
  */
 @Composable
-fun EcranStats(ouvrir: (Ecran) -> Unit) {
+fun EcranStats(ouvrir: (Ecran) -> Unit, retour: () -> Unit) {
     val c = LocalContext.current
     val dao = remember { Base.dao(c) }
     var mois by remember { mutableStateOf(YearMonth.now()) }
@@ -44,7 +44,7 @@ fun EcranStats(ouvrir: (Ecran) -> Unit) {
             pointages.filter { it.personnelId == p.id }.map { JourPointage(LocalDate.parse(it.date), it.arrivee, it.depart, it.retardSignale, it.absent) }, tolerance, aujourdhui)
     }
 
-    Page("Bilans", actions = { Tuile(Icons.Filled.Tune, "Tolérance", Orange) { reglage = true } }) {
+    Page("Bilans du personnel", retour, actions = { Tuile(Icons.Filled.Tune, "Tolérance", Orange) { reglage = true } }) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
             Tuile(Icons.Filled.ChevronLeft, "Précédent") { mois = mois.minusMonths(1) }
             Text(Calculs.moisLong(mois), fontSize = 18.sp, color = BleuNuit)

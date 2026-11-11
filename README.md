@@ -2,6 +2,15 @@
 
 Suivi des **arrivées et départs du personnel de maison** (aide ménagère, gardien, laveur de véhicule, cuisinier(ère), chauffeur…), fiche de chaque personne, sociétés de placement, bilans et évaluations. Tout reste **sur le téléphone, chiffré**.
 
+## Version 1.5 — Portefeuille (dépenses et recettes)
+- Nouvel onglet **Portefeuille** : recettes et dépenses du mois, solde, liste par jour, filtres Tout / Dépenses / Recettes.
+- **Scanner un ticket de caisse** : la photo est gardée **chiffrée comme preuve**, le texte est lu par l'OCR (sur le téléphone) et **pré-remplit** marchand, date, montant total et lignes d'articles ; rien n'écrase ce qui est déjà saisi.
+- **Détail manuel** des courses (article, quantité, prix) avec contrôle de la somme des lignes ; plusieurs pièces par opération.
+- **Corriger ou supprimer** : opération, lignes, pièces ; le texte lu de chaque pièce est **modifiable** à côté de la photo, avec « Relire l'image ».
+- Marchand ou source (liste des précédents + « Autre… »), catégorie, **portefeuille** (Espèces, Orange Money, Moov Money, Telecel Money, Banque / carte), note.
+- **Statistiques** : totaux du mois, évolution sur 6 mois, dépenses par catégorie, principaux marchands, sources de recettes, solde de chaque portefeuille, dépense moyenne par jour, partage du bilan.
+- Onglets : Aujourd'hui · Personnel · Portefeuille · Sociétés · Plus (bilans du personnel, statistiques du portefeuille, profil). Base en version 5, migration automatique.
+
 ## Version 1.4 — Mon profil
 - Nouvel onglet **Profil** : nom, prénoms, **3 numéros de téléphone** (un par défaut), e-mail, **adresse** (rue, quartier, ville, **point de repère**), **position GPS** de la maison, **personne à prévenir en cas d'urgence** et remarques.
 - **Géolocalisation** : bouton « Ma position » (autorisation demandée seulement à ce moment, GPS ou réseau, sans Google Play Services) ; affichage des coordonnées et de la précision, **Voir sur la carte**, **Partager** le lien, **Effacer**.

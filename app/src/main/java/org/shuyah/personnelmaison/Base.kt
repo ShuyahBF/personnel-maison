@@ -168,6 +168,44 @@ data class ProfilUtilisateur(
     val remarques: String = ""
 )
 
+/**
+ * OPÉRATION DU PORTEFEUILLE : une dépense (course, facture…) ou une recette (salaire, vente…). Montants en FCFA, toujours positifs ;
+ * le `genre` dit si c'est une dépense ou une recette. `portefeuille` = d'où vient / où va l'argent (espèces, Orange Money…).
+ */
+@Entity(tableName = "operations", indices = [Index("date")])
+data class Operation(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val genre: String,                  // « DEPENSE » ou « RECETTE »
+    val date: String,                   // AAAA-MM-JJ
+    val montant: Long,
+    val tiers: String = "",             // marchand (dépense) ou source (recette)
+    val categorie: String = "",
+    val portefeuille: String = "Espèces",
+    val note: String = "",
+    val creeLe: Long = System.currentTimeMillis(),
+    val modifieLe: Long = System.currentTimeMillis()
+)
+
+/** Ligne de détail d'une opération (un article d'un ticket de caisse, une course saisie à la main). `montant` = total de la ligne. */
+@Entity(tableName = "lignes_operation", indices = [Index("operationId")])
+data class LigneOperation(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val operationId: Long,
+    val libelle: String,
+    val quantite: Double = 1.0,
+    val montant: Long
+)
+
+/** Pièce justificative d'une opération : photo CHIFFRÉE du ticket ou de la facture, avec le texte lu par l'OCR (corrigeable). */
+@Entity(tableName = "pieces_operation", indices = [Index("operationId")])
+data class PieceOperation(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val operationId: Long,
+    val fichier: String,
+    val texte: String = "",
+    val ajouteLe: Long = System.currentTimeMillis()
+)
+
 // ======================= Accès aux données =======================
 
 @Dao
@@ -205,6 +243,27 @@ interface DaoMaison {
     @Query("SELECT * FROM journal_pointages WHERE personnelId = :id AND date = :date ORDER BY horodatage DESC") fun journal(id: Long, date: String): Flow<List<JournalPointage>>
     @Query("SELECT * FROM journal_pointages WHERE date >= :depuis ORDER BY horodatage DESC") fun journalDepuis(depuis: String): Flow<List<JournalPointage>>
     @Query("DELETE FROM journal_pointages WHERE personnelId = :id") suspend fun supprimerJournalDe(id: Long)
+
+    // ---- Portefeuille : opérations, lignes de détail, pièces ----
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun ajouterOperation(o: Operation): Long
+    @Update(onConflict = OnConflictStrategy.ABORT) suspend fun modifierOperation(o: Operation)
+    @Query("DELETE FROM operations WHERE id = :id") suspend fun supprimerOperation(id: Long)
+    @Query("SELECT * FROM operations WHERE id = :id") suspend fun operation(id: Long): Operation?
+    @Query("SELECT * FROM operations WHERE id = :id") fun operationFlow(id: Long): Flow<Operation?>
+    @Query("SELECT * FROM operations ORDER BY date DESC, id DESC") fun operations(): Flow<List<Operation>>
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun ajouterLigneOperation(l: LigneOperation): Long
+    @Query("DELETE FROM lignes_operation WHERE operationId = :id") suspend fun supprimerLignesOperation(id: Long)
+    @Query("SELECT * FROM lignes_operation WHERE operationId = :id ORDER BY id") fun lignesOperation(id: Long): Flow<List<LigneOperation>>
+    @Query("SELECT * FROM lignes_operation WHERE operationId = :id ORDER BY id") suspend fun lignesOperationListe(id: Long): List<LigneOperation>
+    @Query("SELECT * FROM lignes_operation") fun toutesLignesOperation(): Flow<List<LigneOperation>>
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun ajouterPieceOperation(p: PieceOperation): Long
+    @Update(onConflict = OnConflictStrategy.ABORT) suspend fun modifierPieceOperation(p: PieceOperation)
+    @Query("DELETE FROM pieces_operation WHERE id = :id") suspend fun supprimerPieceOperation(id: Long)
+    @Query("DELETE FROM pieces_operation WHERE operationId = :id") suspend fun supprimerPiecesOperation(id: Long)
+    @Query("SELECT * FROM pieces_operation WHERE operationId = :id ORDER BY id") fun piecesOperation(id: Long): Flow<List<PieceOperation>>
+    @Query("SELECT * FROM pieces_operation WHERE operationId = :id ORDER BY id") suspend fun piecesOperationListe(id: Long): List<PieceOperation>
+    @Query("SELECT * FROM pieces_operation WHERE id = :id") suspend fun pieceOperation(id: Long): PieceOperation?
+    @Query("SELECT operationId, COUNT(*) AS n FROM pieces_operation GROUP BY operationId") fun nombrePieces(): Flow<List<NombrePieces>>
 
     // ---- Profil de l'utilisateur ----
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun enregistrerProfil(p: ProfilUtilisateur): Long
@@ -258,7 +317,10 @@ interface DaoMaison {
     @Query("DELETE FROM evaluations WHERE id = :id") suspend fun supprimerEvaluation(id: Long)
 }
 
-@Database(entities = [Societe::class, Personnel::class, Pointage::class, NotePerso::class, Evaluation::class, JournalPointage::class, HorairePersonnel::class, NumeroTel::class, Paiement::class, Tache::class, DocumentSociete::class, ProfilUtilisateur::class], version = 4, exportSchema = true)
+/** Résultat de « nombre de pièces par opération » (affiche l'icône de pièce dans la liste). */
+data class NombrePieces(val operationId: Long, val n: Int)
+
+@Database(entities = [Societe::class, Personnel::class, Pointage::class, NotePerso::class, Evaluation::class, JournalPointage::class, HorairePersonnel::class, NumeroTel::class, Paiement::class, Tache::class, DocumentSociete::class, ProfilUtilisateur::class, Operation::class, LigneOperation::class, PieceOperation::class], version = 5, exportSchema = true)
 abstract class BaseDonnees : RoomDatabase() { abstract fun dao(): DaoMaison }
 
 /**
@@ -304,6 +366,18 @@ val MIGRATION_3_4 = object : androidx.room.migration.Migration(3, 4) {
     }
 }
 
+/** Migration 4 → 5 : portefeuille (opérations, lignes de détail, pièces justificatives). */
+val MIGRATION_4_5 = object : androidx.room.migration.Migration(4, 5) {
+    override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS `operations` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `genre` TEXT NOT NULL, `date` TEXT NOT NULL, `montant` INTEGER NOT NULL, `tiers` TEXT NOT NULL, `categorie` TEXT NOT NULL, `portefeuille` TEXT NOT NULL, `note` TEXT NOT NULL, `creeLe` INTEGER NOT NULL, `modifieLe` INTEGER NOT NULL)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_operations_date` ON `operations` (`date`)")
+        db.execSQL("CREATE TABLE IF NOT EXISTS `lignes_operation` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `operationId` INTEGER NOT NULL, `libelle` TEXT NOT NULL, `quantite` REAL NOT NULL, `montant` INTEGER NOT NULL)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_lignes_operation_operationId` ON `lignes_operation` (`operationId`)")
+        db.execSQL("CREATE TABLE IF NOT EXISTS `pieces_operation` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `operationId` INTEGER NOT NULL, `fichier` TEXT NOT NULL, `texte` TEXT NOT NULL, `ajouteLe` INTEGER NOT NULL)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_pieces_operation_operationId` ON `pieces_operation` (`operationId`)")
+    }
+}
+
 object Base {
     private var instance: BaseDonnees? = null
 
@@ -321,6 +395,6 @@ object Base {
             prefs.edit().putString("cle_base", cle).apply()
         }
         return Room.databaseBuilder(c, BaseDonnees::class.java, "personnel_maison.db")
-            .openHelperFactory(SupportFactory(SQLiteDatabase.getBytes(cle.toCharArray()))).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build()
+            .openHelperFactory(SupportFactory(SQLiteDatabase.getBytes(cle.toCharArray()))).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build()
     }
 }

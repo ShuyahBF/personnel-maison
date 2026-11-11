@@ -21,7 +21,7 @@ import kotlinx.coroutines.launch
  * POSITION GPS de la maison (un appui sur « Ma position »), personne à prévenir et remarques. Tout reste sur le téléphone, chiffré.
  */
 @Composable
-fun EcranProfil() {
+fun EcranProfil(retour: () -> Unit) {
     val c = LocalContext.current
     val dao = remember { Base.dao(c) }
     val scope = rememberCoroutineScope()
@@ -58,7 +58,7 @@ fun EcranProfil() {
     val completude = Calculs.completudeProfil(ProfilUtilisateur(nom = nom, prenoms = prenoms, email = email, adresse = adresse, ville = ville, repere = repere, latitude = latitude, longitude = longitude,
         urgenceNom = urgenceNom, urgenceTelephone = urgenceTel), numeros.count { it.numero.isNotBlank() })
 
-    Page("Mon profil") {
+    Page("Mon profil", retour) {
         Carte {
             Text("Profil complété à $completude %", fontSize = 16.sp, color = BleuNuit)
             LinearProgressIndicator(progress = { completude / 100f }, modifier = Modifier.fillMaxWidth().padding(top = 6.dp), color = Vert)
