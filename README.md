@@ -2,6 +2,15 @@
 
 Suivi des **arrivées et départs du personnel de maison** (aide ménagère, gardien, laveur de véhicule, cuisinier(ère), chauffeur…), fiche de chaque personne, sociétés de placement, bilans et évaluations. Tout reste **sur le téléphone, chiffré**.
 
+## Version 1.9 — Rappels de médicaments partagés avec la famille
+- Nouvel écran **Plus → Médicaments** : nom (liste + « Autre… »), dose, **heures de prise** (plusieurs par jour), **jours** de la semaine, période facultative, note, traitement actif ou arrêté. Les prises d'aujourd'hui s'affichent avec leur état (à venir, rappel envoyé, pris, oublié) et un bouton **Pris**.
+- **Rappel à l'heure** (alarme du téléphone, exacte si le système l'autorise) avec les boutons **Pris** et **Plus tard** (retour dans 10 minutes). Les alarmes sont reprogrammées à l'ouverture de l'application et au redémarrage du téléphone.
+- **Oubli** : une prise non confirmée **30 minutes** après l'heure prévue est notée « oubliée ».
+- **Partage avec la famille** : si le médicament est partagé, la prise ou l'oubli est envoyé, **chiffré de bout en bout**, aux seuls proches cochés dans leur fiche (Ma famille → le proche → « Partager mes rappels de médicaments »). La fiche d'un proche affiche aussi ses dernières prises ou oublis.
+- **Veille des proches** (toutes les 5 minutes environ, application fermée) : notification d'alerte quand un proche n'a pas pris un médicament, notification discrète quand il l'a pris, et **nouveaux messages** (« Nouveau message de Awa », sans le contenu sur l'écran verrouillé). Seuls les éléments arrivés après l'activation sont notifiés.
+- Base en version 7 (migration automatique) ; serveur : SAWALI lot 381 (événements chiffrés, conservés 30 jours).
+- À venir : photo de caméra partagée, notifications de prise de repas.
+
 ## Version 1.8 — Ma famille : ajout par NFC et partage de position
 - **Ajout par contact NFC** (deux téléphones avec NFC, dos contre dos) : l'un appuie sur « J'invite », l'autre sur « J'ajoute ». Le code d'invitation passe par NFC, ainsi que l'**empreinte de la clé** de chacun ; si elle concorde avec la clé annoncée par le serveur, le lien est **vérifié automatiquement** des deux côtés (le contact physique remplace la comparaison du numéro de sécurité). Sinon, la vérification manuelle reste nécessaire. Le code reste utilisable à la place du NFC.
 - **Ma position** : domicile (position actuelle + **rayon du périmètre** 50 m à 1 km), autres lieux (École, Travail… avec nom libre), mode « seulement hors du domicile » (par défaut : envoi **chaque minute** tant que la personne est sortie du périmètre, plus une dernière position au retour) ou « en permanence ».

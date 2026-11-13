@@ -28,4 +28,16 @@ object ReglagesFamille {
     /** Partage en cours (service de suivi démarré) : sert à restaurer l'interrupteur à l'ouverture de l'écran. */
     fun actif(c: Context) = p(c).getBoolean("partage_actif", false)
     fun actif(c: Context, v: Boolean) = p(c).edit().putBoolean("partage_actif", v).apply()
+
+    /** Proches avec qui je partage mes rappels de médicaments (prise ou oubli). */
+    fun partageMedsAvec(c: Context): Set<String> = p(c).getStringSet("partage_meds_avec", emptySet()) ?: emptySet()
+    fun partagerMeds(c: Context, lienId: String, oui: Boolean) = p(c).edit().putStringSet("partage_meds_avec", partageMedsAvec(c).toMutableSet().apply { if (oui) add(lienId) else remove(lienId) }).apply()
+
+    /** Curseurs de lecture (événements et messages) par lien : seuls les éléments plus récents sont notifiés. Premier passage = maintenant (rien d'ancien n'est notifié). */
+    fun curseur(c: Context, genre: String, lienId: String): Long {
+        val cle = "curseur_${genre}_$lienId"
+        if (!p(c).contains(cle)) p(c).edit().putLong(cle, System.currentTimeMillis() * 1_000_000L).apply()      // mémorisé dès le premier passage
+        return p(c).getLong(cle, 0L)
+    }
+    fun curseur(c: Context, genre: String, lienId: String, v: Long) = p(c).edit().putLong("curseur_${genre}_$lienId", v).apply()
 }

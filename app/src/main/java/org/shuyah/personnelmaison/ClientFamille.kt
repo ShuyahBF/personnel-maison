@@ -134,4 +134,24 @@ object ClientFamille {
 
     /** J'arrête de partager avec ce proche : ma position est effacée du serveur. */
     suspend fun effacerPosition(c: Context, lienId: String) = withContext(Dispatchers.IO) { appel(c, "DELETE", "/liens/$lienId/position"); Unit }
+
+    // ---- Événements partagés (rappels de médicaments pris ou oubliés, repas…) : chiffrés comme les messages, AAD « evt: » ----
+    /** Un événement reçu : contenu déchiffré (null si illisible). */
+    data class EvenementVu(val seq: Long, val type: String, val texte: String?, val creeLe: String)
+
+    /** Envoie un événement chiffré à ce proche (lien vérifié seulement). */
+    suspend fun deposerEvenement(c: Context, lien: Lien, type: String, texteClair: String) = withContext(Dispatchers.IO) {
+        val (nonce, chiffre) = FamilleCrypto.chiffrer(cle(c, lien), texteClair, "evt:" + lien.id)
+        appel(c, "POST", "/liens/${lien.id}/evenements", JSONObject().put("type", type).put("nonce", nonce).put("chiffre", chiffre)); Unit
+    }
+
+    /** Événements de ce proche reçus après le curseur `apres`, déchiffrés. */
+    suspend fun evenements(c: Context, lien: Lien, apres: Long = 0): List<EvenementVu> = withContext(Dispatchers.IO) {
+        val k = cle(c, lien)
+        val tab = appel(c, "GET", "/liens/${lien.id}/evenements?apres=$apres").getJSONArray("evenements")
+        (0 until tab.length()).map { i ->
+            val e = tab.getJSONObject(i)
+            EvenementVu(e.getLong("seq"), e.getString("type"), FamilleCrypto.dechiffrer(k, e.getString("nonce"), e.getString("chiffre"), "evt:" + lien.id), e.getString("cree_le"))
+        }
+    }
 }

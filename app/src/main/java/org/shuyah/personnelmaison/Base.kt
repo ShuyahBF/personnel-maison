@@ -186,6 +186,34 @@ data class Operation(
     val modifieLe: Long = System.currentTimeMillis()
 )
 
+/**
+ * Médicament à rappeler (version 1.9) : nom, dose, heures de prise (« 08:00,20:00 »), jours (bit 0 = lundi … bit 6 = dimanche ; 127 = tous), période facultative,
+ * partage avec les proches choisis (prise ou oubli signalés) et actif ou non.
+ */
+@Entity(tableName = "medicaments")
+data class Medicament(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val nom: String,
+    val dose: String = "",
+    val heures: String = "08:00",
+    val jours: Int = 127,
+    val debut: String? = null,
+    val fin: String? = null,
+    val partage: Boolean = true,
+    val actif: Boolean = true,
+    val note: String = ""
+)
+
+/** Une prise prévue d'un médicament à une heure donnée : ATTENTE (rappel envoyé), PRIS, OUBLIE (non confirmée après 30 minutes). Une seule ligne par médicament et par heure prévue. */
+@Entity(tableName = "prises_medicament", indices = [Index(value = ["medicamentId", "prevuMs"], unique = true)])
+data class PriseMedicament(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val medicamentId: Long,
+    val prevuMs: Long,
+    val statut: String = "ATTENTE",
+    val faitLeMs: Long? = null
+)
+
 /** Ligne de détail d'une opération (un article d'un ticket de caisse, une course saisie à la main). `montant` = total de la ligne. */
 @Entity(tableName = "lignes_operation", indices = [Index("operationId")])
 data class LigneOperation(
@@ -245,6 +273,20 @@ interface DaoMaison {
     @Query("SELECT * FROM journal_pointages WHERE personnelId = :id AND date = :date ORDER BY horodatage DESC") fun journal(id: Long, date: String): Flow<List<JournalPointage>>
     @Query("SELECT * FROM journal_pointages WHERE date >= :depuis ORDER BY horodatage DESC") fun journalDepuis(depuis: String): Flow<List<JournalPointage>>
     @Query("DELETE FROM journal_pointages WHERE personnelId = :id") suspend fun supprimerJournalDe(id: Long)
+
+    // ---- Médicaments et prises (rappels partagés avec la famille) ----
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun ajouterMedicament(m: Medicament): Long
+    @Update(onConflict = OnConflictStrategy.ABORT) suspend fun modifierMedicament(m: Medicament)
+    @Query("DELETE FROM medicaments WHERE id = :id") suspend fun supprimerMedicament(id: Long)
+    @Query("DELETE FROM prises_medicament WHERE medicamentId = :id") suspend fun supprimerPrisesDe(id: Long)
+    @Query("SELECT * FROM medicaments ORDER BY nom COLLATE NOCASE") fun medicaments(): Flow<List<Medicament>>
+    @Query("SELECT * FROM medicaments") suspend fun medicamentsListe(): List<Medicament>
+    @Query("SELECT * FROM medicaments WHERE id = :id") suspend fun medicament(id: Long): Medicament?
+    @Insert(onConflict = OnConflictStrategy.IGNORE) suspend fun ajouterPrise(p: PriseMedicament): Long
+    @Query("SELECT * FROM prises_medicament WHERE medicamentId = :med AND prevuMs = :prevu") suspend fun prise(med: Long, prevu: Long): PriseMedicament?
+    @Query("SELECT * FROM prises_medicament WHERE id = :id") suspend fun priseParId(id: Long): PriseMedicament?
+    @Query("UPDATE prises_medicament SET statut = :statut, faitLeMs = :faitLe WHERE id = :id") suspend fun majPrise(id: Long, statut: String, faitLe: Long?)
+    @Query("SELECT * FROM prises_medicament WHERE prevuMs >= :depuis ORDER BY prevuMs") fun prisesDepuis(depuis: Long): Flow<List<PriseMedicament>>
 
     // ---- Portefeuille : opérations, lignes de détail, pièces ----
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun ajouterOperation(o: Operation): Long
@@ -324,7 +366,7 @@ interface DaoMaison {
 /** Résultat de « nombre de pièces par opération » (affiche l'icône de pièce dans la liste). */
 data class NombrePieces(val operationId: Long, val n: Int)
 
-@Database(entities = [Societe::class, Personnel::class, Pointage::class, NotePerso::class, Evaluation::class, JournalPointage::class, HorairePersonnel::class, NumeroTel::class, Paiement::class, Tache::class, DocumentSociete::class, ProfilUtilisateur::class, Operation::class, LigneOperation::class, PieceOperation::class], version = 6, exportSchema = true)
+@Database(entities = [Societe::class, Personnel::class, Pointage::class, NotePerso::class, Evaluation::class, JournalPointage::class, HorairePersonnel::class, NumeroTel::class, Paiement::class, Tache::class, DocumentSociete::class, ProfilUtilisateur::class, Operation::class, LigneOperation::class, PieceOperation::class, Medicament::class, PriseMedicament::class], version = 7, exportSchema = true)
 abstract class BaseDonnees : RoomDatabase() { abstract fun dao(): DaoMaison }
 
 /**
@@ -389,6 +431,15 @@ val MIGRATION_5_6 = object : androidx.room.migration.Migration(5, 6) {
     }
 }
 
+/** Migration 6 → 7 : médicaments et prises (rappels partagés avec la famille). Les données existantes sont conservées. */
+val MIGRATION_6_7 = object : androidx.room.migration.Migration(6, 7) {
+    override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS `medicaments` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `nom` TEXT NOT NULL, `dose` TEXT NOT NULL, `heures` TEXT NOT NULL, `jours` INTEGER NOT NULL, `debut` TEXT, `fin` TEXT, `partage` INTEGER NOT NULL, `actif` INTEGER NOT NULL, `note` TEXT NOT NULL)")
+        db.execSQL("CREATE TABLE IF NOT EXISTS `prises_medicament` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `medicamentId` INTEGER NOT NULL, `prevuMs` INTEGER NOT NULL, `statut` TEXT NOT NULL, `faitLeMs` INTEGER)")
+        db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_prises_medicament_medicamentId_prevuMs` ON `prises_medicament` (`medicamentId`, `prevuMs`)")
+    }
+}
+
 object Base {
     private var instance: BaseDonnees? = null
 
@@ -406,6 +457,6 @@ object Base {
             prefs.edit().putString("cle_base", cle).apply()
         }
         return Room.databaseBuilder(c, BaseDonnees::class.java, "personnel_maison.db")
-            .openHelperFactory(SupportFactory(SQLiteDatabase.getBytes(cle.toCharArray()))).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6).build()
+            .openHelperFactory(SupportFactory(SQLiteDatabase.getBytes(cle.toCharArray()))).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7).build()
     }
 }
