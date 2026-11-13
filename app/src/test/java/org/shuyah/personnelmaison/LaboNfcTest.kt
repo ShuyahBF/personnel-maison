@@ -85,3 +85,11 @@ class LaboNfcTriTest {
         assertEquals("1 carte · 1 formatée, vide", LaboNfc.bilanTri(listOf(carte("D", LaboNfc.GenreCarte.FORMATEE_VIDE))))
     }
 }
+
+/** Le lien d'ordonnance de test doit pointer vers le SITE, pas vers l'adresse de l'API (constat du 13/11/2026). */
+class LaboNfcLienTest {
+    @Test fun lienDOrdonnanceSurLeSite() {
+        assertEquals("https://sawalismartsystems.com/officine/ordonnance/", LaboNfc.ADRESSE_SITE_ORDONNANCE)
+        assertFalse(LaboNfc.ADRESSE_SITE_ORDONNANCE.contains("api."))
+    }
+}

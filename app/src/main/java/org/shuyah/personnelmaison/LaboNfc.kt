@@ -134,13 +134,17 @@ object LaboNfc {
 
     private fun prefixeUri(code: Int) = when (code) { 0 -> ""; 1 -> "http://www."; 2 -> "https://www."; 3 -> "http://"; 4 -> "https://"; 5 -> "tel:"; else -> "" }
 
+    /** Début de l'adresse publique d'une ordonnance (site SAWALI) : le jeton s'ajoute à la fin. */
+    const val ADRESSE_SITE_ORDONNANCE = "https://sawalismartsystems.com/officine/ordonnance/"
+
     /** Contenus de simulation proposés pour une carte vierge (liste finie → liste déroulante). Ils ne contiennent AUCUNE donnée réelle. */
     val CONTENUS = listOf("Ordonnance (lien de test)", "Carte marchand (simulation, non signée)", "Étiquette médicament (simulation)", "Texte libre de test")
 
     /** Message NDEF de simulation pour ce contenu ; `jeton` = identifiant aléatoire de test. */
     fun messageDeTest(contenu: String, jeton: String, paquet: String): NdefMessage {
         val enregistrement = when (contenu) {
-            CONTENUS[0] -> NdefRecord.createUri("https://api.sawalismartsystems.com/officine/ordonnance/TEST-$jeton")
+            // Version 1.24 : la page publique des ordonnances est sur le SITE (sawalismartsystems.com), pas sur l'adresse de l'API : le lien de test s'ouvre vraiment
+            CONTENUS[0] -> NdefRecord.createUri(ADRESSE_SITE_ORDONNANCE + "TEST-$jeton")
             CONTENUS[1] -> NdefRecord.createMime("application/vnd.shuyah.marchand", "{\"test\":true,\"m\":\"Pharmacie TEST\",\"op\":\"Operateur TEST\",\"code\":\"000000\",\"ussd\":\"*000*TEST*<montant>#\",\"jeton\":\"$jeton\"}".toByteArray(Charsets.UTF_8))
             CONTENUS[2] -> NdefRecord.createMime(EtiquetteNfc.MIME, EtiquetteNfc.charge("test$jeton".take(8), 0).toByteArray(Charsets.UTF_8))
             else -> NdefRecord.createTextRecord("fr", "Test NFC Personnel de maison $jeton")
