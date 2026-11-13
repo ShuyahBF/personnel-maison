@@ -57,3 +57,31 @@ class LaboNfcTest {
         assertEquals(35, echec.first); assertTrue(echec.second.startsWith("Échec"))
     }
 }
+
+/** Tests du tri des cartes (logique pure) : genre, fusion de la liste, bilan. */
+class LaboNfcTriTest {
+    private fun carte(id: String, g: LaboNfc.GenreCarte) = LaboNfc.CarteVue(id, g, "", "Mifare Classic 1K", 1, 0L)
+
+    @Test fun genreDUneCarte() {
+        assertEquals(LaboNfc.GenreCarte.VIERGE, LaboNfc.classer(ndefPresent = false, formatable = true, inscriptible = true, vide = true))
+        assertEquals(LaboNfc.GenreCarte.FORMATEE_VIDE, LaboNfc.classer(true, false, true, true))
+        assertEquals(LaboNfc.GenreCarte.AVEC_CONTENU, LaboNfc.classer(true, false, true, false))
+        assertEquals(LaboNfc.GenreCarte.VERROUILLEE, LaboNfc.classer(true, false, false, false))
+        assertEquals(LaboNfc.GenreCarte.NON_INSCRIPTIBLE, LaboNfc.classer(false, false, true, true))
+    }
+
+    @Test fun laDerniereCartePasseEnTeteEtLesPassagesSAdditionnent() {
+        var l = emptyList<LaboNfc.CarteVue>()
+        l = LaboNfc.fusionnerCarte(l, carte("A", LaboNfc.GenreCarte.VIERGE))
+        l = LaboNfc.fusionnerCarte(l, carte("B", LaboNfc.GenreCarte.AVEC_CONTENU))
+        l = LaboNfc.fusionnerCarte(l, carte("A", LaboNfc.GenreCarte.FORMATEE_VIDE))     // A relue : état mis à jour, en tête, 2 passages
+        assertEquals(listOf("A", "B"), l.map { it.id }); assertEquals(2, l[0].passages); assertEquals(LaboNfc.GenreCarte.FORMATEE_VIDE, l[0].genre); assertEquals(1, l[1].passages)
+    }
+
+    @Test fun bilanDuTri() {
+        assertEquals("Aucune carte lue", LaboNfc.bilanTri(emptyList()))
+        val l = listOf(carte("A", LaboNfc.GenreCarte.VIERGE), carte("B", LaboNfc.GenreCarte.VIERGE), carte("C", LaboNfc.GenreCarte.AVEC_CONTENU))
+        assertEquals("3 cartes · 2 vierge · 1 contient des données", LaboNfc.bilanTri(l))
+        assertEquals("1 carte · 1 formatée, vide", LaboNfc.bilanTri(listOf(carte("D", LaboNfc.GenreCarte.FORMATEE_VIDE))))
+    }
+}

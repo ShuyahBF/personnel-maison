@@ -2,6 +2,12 @@
 
 Suivi des **arrivées et départs du personnel de maison** (aide ménagère, gardien, laveur de véhicule, cuisinier(ère), chauffeur…), fiche de chaque personne, sociétés de placement, bilans et évaluations. Tout reste **sur le téléphone, chiffré**.
 
+## Version 1.23 — Test NFC : « Trier mes cartes » et fin de la lenteur de « Aide et à propos »
+- **Correction de la lenteur** (constat du propriétaire : affichage et défilement très lents dans « Aide et à propos ») : l'accès aux préférences chiffrées était **recréé à chaque lecture** (clé maîtresse, jeu de clés : des dizaines à des centaines de millisecondes), et cet écran en relit une quinzaine toutes les 2 secondes. L'accès est maintenant créé **une seule fois** et gardé en mémoire : tous les écrans qui lisent ces réglages en profitent.
+- Nouvelle action **« Trier mes cartes »** dans l'écran « Test NFC (cartes vierges) » : le lecteur reste ouvert, on pose les cartes UNE PAR UNE ; pour chacune l'écran affiche son **identifiant** et son **état** en grand et en couleur (VIERGE non formatée, formatée VIDE, contient des données, lecture seule, non inscriptible) avec un résumé du contenu.
+- La liste des cartes lues est **filtrable** (ex. n'afficher que les vierges) et on peut **donner un nom** à chaque carte (mémorisé sur le téléphone, retrouvé à la lecture suivante) ; bouton « Copier la liste ». Rien n'est écrit pendant le tri.
+- Pour retrouver une carte parmi d'autres sans signe extérieur : poser toutes les cartes, filtrer « VIERGE », nommer chacune (« Carte A »…), puis marquer la carte physiquement.
+
 ## Version 1.22 — Récepteur de badges (présence par balises, SAWALI lot 387)
 - Nouvel écran **Plus → Récepteur de badges** : ce téléphone, posé et branché dans une pièce, écoute les balises Bluetooth (Estimote, iBeacon, Eddystone-UID) et envoie à SAWALI, toutes les 5 secondes, les badges entendus et leur signal ; SAWALI montre qui est dans quelle zone (Paramètres → « Présence par balises »). Un envoi « à vide » toutes les 30 s indique que le récepteur est vivant.
 - **Service au premier plan** avec notification permanente (bouton Arrêter) ; processeur gardé éveillé. Les autres appareils Bluetooth (téléphones, écouteurs) ne sont **jamais** envoyés.

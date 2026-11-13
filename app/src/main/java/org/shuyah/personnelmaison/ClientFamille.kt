@@ -35,9 +35,15 @@ object ClientFamille {
     /** Un message déchiffré ; `texte` est null si le déchiffrement a échoué (clé ou message altéré). */
     data class Message(val seq: Long, val deMoi: Boolean, val texte: String?, val creeLe: String)
 
-    internal fun prefs(c: Context) = EncryptedSharedPreferences.create(c, "famille_secrets",
-        MasterKey.Builder(c).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build(),
-        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV, EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM)
+    /** Préférences chiffrées, créées UNE SEULE FOIS puis gardées en mémoire (version 1.23). Avant, chaque lecture recréait l'accès chiffré (clé maîtresse, jeu de clés), ce qui
+     *  coûte de dizaines à des centaines de millisecondes : l'écran « Aide et à propos », qui relit une quinzaine de réglages toutes les 2 secondes, devenait très lent. */
+    @Volatile private var prefsEnMemoire: android.content.SharedPreferences? = null
+
+    internal fun prefs(c: Context): android.content.SharedPreferences = prefsEnMemoire ?: synchronized(this) {
+        prefsEnMemoire ?: EncryptedSharedPreferences.create(c.applicationContext, "famille_secrets",
+            MasterKey.Builder(c.applicationContext).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build(),
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV, EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM).also { prefsEnMemoire = it }
+    }
 
     fun inscrit(c: Context) = prefs(c).getString("compte_id", null) != null
     fun nom(c: Context) = prefs(c).getString("nom", "") ?: ""

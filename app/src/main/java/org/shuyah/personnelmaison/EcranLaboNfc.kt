@@ -3,6 +3,7 @@ package org.shuyah.personnelmaison
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -30,6 +31,9 @@ fun EcranLaboNfc(retour: () -> Unit) = Page("Test NFC", retour) {
     var contenu by remember { mutableStateOf(LaboNfc.CONTENUS[0]) }
     var actif by remember { mutableStateOf(false) }
     var resultat by remember { mutableStateOf<Boolean?>(null) }
+    var cartes by remember { mutableStateOf<List<LaboNfc.CarteVue>>(emptyList()) }          // mode « Trier mes cartes »
+    var nommerCarte by remember { mutableStateOf<LaboNfc.CarteVue?>(null) }
+    var filtre by remember { mutableStateOf("Toutes") }
     val journal = remember { mutableStateListOf<Pair<String, LaboNfc.Etape>>() }                // (heure, étape)
     val nfc = remember(actif) { FamilleNfc.etatNfc(c) }
     val formatHeure = remember { SimpleDateFormat("HH:mm:ss", Locale.FRANCE) }
@@ -48,6 +52,10 @@ fun EcranLaboNfc(retour: () -> Unit) = Page("Test NFC", retour) {
         val a = FamilleNfc.activite(c) ?: return
         journal.clear(); resultat = null; actif = true; debutMs = System.currentTimeMillis(); ecouleS = 0
         when (mode) {
+            "Trier mes cartes" -> {
+                cartes = emptyList()
+                LaboNfc.demarrerTri(a, { carte -> FamilleNfc.activite(c)?.runOnUiThread { cartes = LaboNfc.fusionnerCarte(cartes, carte) } }) { terminer(false) }
+            }
             "Lire une carte" -> { ajouter(LaboNfc.Etape("En attente d'une carte", LaboNfc.Etat.EN_COURS, "approchez la carte du dos du téléphone")); LaboNfc.demarrerLecture(a, ajouter) { terminer(null) } }
             "Effacer une carte" -> { ajouter(LaboNfc.Etape("En attente d'une carte", LaboNfc.Etat.EN_COURS, "approchez la carte à effacer")); LaboNfc.demarrerEcriture(a, null, ajouter) { terminer(it) } }
             else -> {
@@ -64,6 +72,20 @@ fun EcranLaboNfc(retour: () -> Unit) = Page("Test NFC", retour) {
         when {
             nfc == 0 -> Text("Ce téléphone n'a pas de NFC.", fontSize = 14.sp, color = Gris)
             nfc == 1 -> Text("Le NFC est désactivé : activez-le dans les réglages du téléphone (Plus → Aide et à propos).", fontSize = 14.sp, color = Orange)
+            actif && mode == "Trier mes cartes" -> {
+                // Tri : le lecteur reste ouvert ; la dernière carte posée s'affiche en grand avec son état
+                val derniere = cartes.firstOrNull()
+                Text("Posez les cartes UNE PAR UNE contre le dos du téléphone : le résultat de chacune s'affiche ci-dessous.", fontSize = 14.sp, color = BleuNuit)
+                if (derniere != null) {
+                    val couleur = when (derniere.genre) { LaboNfc.GenreCarte.VIERGE -> Vert; LaboNfc.GenreCarte.AVEC_CONTENU -> Orange; LaboNfc.GenreCarte.FORMATEE_VIDE -> Bleu; else -> Rouge }
+                    Text("Dernière carte : ${derniere.id}", fontSize = 16.sp, color = BleuNuit)
+                    Text(derniere.genre.libelle, fontSize = 22.sp, color = couleur)
+                    val nom = Reglages.nomCarte(c, derniere.id)
+                    if (nom.isNotBlank()) Text("Nom : $nom", fontSize = 14.sp, color = BleuNuit)
+                }
+                Text(LaboNfc.bilanTri(cartes), fontSize = 14.sp, color = Gris)
+                GrosBouton(Icons.Filled.Stop, "Terminer le tri", Rouge) { FamilleNfc.activite(c)?.let { LaboNfc.arreter(it) }; actif = false }
+            }
             actif -> {
                 // Jauge de progression : pourcentage et étape déduits du journal, temps écoulé, conseil si la carte tarde
                 val (pourcent, etape) = LaboNfc.progression(journal.map { it.second })
@@ -75,11 +97,40 @@ fun EcranLaboNfc(retour: () -> Unit) = Page("Test NFC", retour) {
                 GrosBouton(Icons.Filled.Stop, "Arrêter", Rouge) { FamilleNfc.activite(c)?.let { LaboNfc.arreter(it) }; actif = false; journal.add(formatHeure.format(Date()) to LaboNfc.Etape("Arrêté par l'utilisateur", LaboNfc.Etat.INFO)) }
             }
             else -> {
-                Liste("Action", mode, listOf("Écrire une carte", "Lire une carte", "Effacer une carte")) { mode = it }
+                Liste("Action", mode, listOf("Écrire une carte", "Lire une carte", "Effacer une carte", "Trier mes cartes")) { mode = it }
                 if (mode == "Écrire une carte") Liste("Contenu de test", contenu, LaboNfc.CONTENUS) { contenu = it }
-                GrosBouton(Icons.Filled.PlayArrow, if (journal.isEmpty()) "Démarrer le test" else "Recommencer", Bleu) { demarrer() }
+                GrosBouton(Icons.Filled.PlayArrow, if (mode == "Trier mes cartes") "Commencer le tri" else if (journal.isEmpty()) "Démarrer le test" else "Recommencer", Bleu) { demarrer() }
             }
         }
+    }
+
+    // Liste des cartes triées : filtre, genre en couleur, nom modifiable (mémorisé sur le téléphone), copie de la liste
+    if (cartes.isNotEmpty()) Carte("Cartes lues (${cartes.size})", Icons.Filled.Checklist) {
+        Text(LaboNfc.bilanTri(cartes), fontSize = 13.sp, color = Gris)
+        Liste("Afficher", filtre, listOf("Toutes") + LaboNfc.GenreCarte.values().map { it.libelle }) { filtre = it }
+        cartes.filter { filtre == "Toutes" || it.genre.libelle == filtre }.forEach { k ->
+            val couleur = when (k.genre) { LaboNfc.GenreCarte.VIERGE -> Vert; LaboNfc.GenreCarte.AVEC_CONTENU -> Orange; LaboNfc.GenreCarte.FORMATEE_VIDE -> Bleu; else -> Rouge }
+            val nom = Reglages.nomCarte(c, k.id)
+            Column(Modifier.fillMaxWidth().padding(vertical = 6.dp).clickable { nommerCarte = k }) {
+                Text(k.id + if (nom.isNotBlank()) "  ·  $nom" else "", fontSize = 16.sp, color = BleuNuit)
+                Text(k.genre.libelle + " · " + k.famille, fontSize = 13.sp, color = couleur)
+                Text("Contenu : ${k.resume} · lue ${k.passages} fois · ${formatHeure.format(Date(k.vueLe))}", fontSize = 12.sp, color = Gris)
+                Text("✎ Donner un nom à cette carte", fontSize = 12.sp, color = Bleu)
+            }
+            HorizontalDivider()
+        }
+        GrosBouton(Icons.Filled.ContentCopy, "Copier la liste", Gris) {
+            val texte = cartes.joinToString("\n") { k -> k.id + " · " + k.genre.libelle + Reglages.nomCarte(c, k.id).let { if (it.isBlank()) "" else " · $it" } + " · " + k.resume }
+            (c.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("Cartes NFC", texte))
+        }
+    }
+
+    nommerCarte?.let { k ->
+        var texte by remember(k.id) { mutableStateOf(Reglages.nomCarte(c, k.id)) }
+        AlertDialog(onDismissRequest = { nommerCarte = null }, title = { Text("Nom de la carte") },
+            text = { Column { Text(k.id + " · " + k.genre.libelle, fontSize = 12.sp, color = Gris); Champ("Nom (ex. Carte A, Pharmacie 1)", texte, { texte = it }) } },
+            confirmButton = { Tuile(Icons.Filled.Check, "Valider", Orange) { Reglages.nomCarte(c, k.id, texte.trim()); nommerCarte = null } },
+            dismissButton = { Tuile(Icons.Filled.Close, "Annuler", Orange) { nommerCarte = null } })
     }
 
     if (resultat != null) Carte(null, null) {
