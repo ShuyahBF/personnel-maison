@@ -40,4 +40,20 @@ class LaboNfcTest {
         assertEquals(4, LaboNfc.CONTENUS.size)
         assertEquals(8, LaboNfc.jetonDeTest().length); assertNotEquals(LaboNfc.jetonDeTest(), LaboNfc.jetonDeTest())
     }
+
+    @Test fun progressionDuTest() {
+        fun e(l: String, s: LaboNfc.Etat = LaboNfc.Etat.OK) = LaboNfc.Etape(l, s)
+        assertEquals(0 to "En attente de la carte", LaboNfc.progression(listOf(e("En attente d'une carte", LaboNfc.Etat.EN_COURS))))
+        assertEquals(20, LaboNfc.progression(listOf(e("Carte détectée"))).first)
+        assertEquals(65, LaboNfc.progression(listOf(e("Carte détectée"), e("État NDEF"), e("Taille du message"), e("Formatage et écriture", LaboNfc.Etat.EN_COURS))).first)
+        assertEquals(80, LaboNfc.progression(listOf(e("Carte détectée"), e("Écriture", LaboNfc.Etat.EN_COURS), e("Écriture"))).first)
+        // Après un formatage : on attend la présentation suivante, puis la relecture (le pourcentage ne recule jamais)
+        val attente = listOf(e("Carte détectée"), e("Formatage et écriture"), e("Vérification à faire", LaboNfc.Etat.EN_COURS))
+        assertEquals(85, LaboNfc.progression(attente).first)
+        assertEquals(90, LaboNfc.progression(attente + e("Carte représentée")).first)
+        assertEquals(100, LaboNfc.progression(attente + e("Carte représentée") + e("Vérification par relecture") + e("Test réussi")).first)
+        // Un échec garde le pourcentage atteint et l'indique
+        val echec = LaboNfc.progression(listOf(e("Carte détectée"), e("État NDEF", LaboNfc.Etat.ECHEC), e("Arrêt", LaboNfc.Etat.ECHEC)))
+        assertEquals(35, echec.first); assertTrue(echec.second.startsWith("Échec"))
+    }
 }

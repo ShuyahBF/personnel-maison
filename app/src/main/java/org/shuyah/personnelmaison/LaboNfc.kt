@@ -56,6 +56,33 @@ object LaboNfc {
         else -> "Famille inconnue (SAK %02X)".format(sak)
     }
 
+    /**
+     * Progression du test (0 à 100 %) et étape en cours, déduites du journal. Logique pure, testée (LaboNfcTest).
+     * Jalons : carte détectée 20 % · état lu 35 % · message prêt 50 % · écriture 65 % puis 80 % · vérification à faire 85 % ·
+     * carte représentée 90 % · vérification faite 95 % · terminé 100 %. Une étape d'échec garde le pourcentage atteint.
+     */
+    fun progression(etapes: List<Etape>): Pair<Int, String> {
+        var pourcent = 0
+        var texte = "En attente de la carte"
+        for (e in etapes) {
+            val (v, t) = when {
+                e.libelle == "Carte détectée" -> 20 to "Carte détectée"
+                e.libelle == "État NDEF" -> 35 to "État de la carte lu"
+                e.libelle == "Taille du message" || e.libelle == "Préparation" -> 50 to "Message préparé"
+                e.libelle == "Vérification à faire" -> 85 to "Éloignez la carte puis reposez-la pour la vérification"
+                e.libelle == "Carte représentée" -> 90 to "Relecture de contrôle"
+                e.libelle.startsWith("Vérification") -> (if (e.etat == Etat.EN_COURS) 90 else 95) to "Vérification faite"
+                e.libelle.startsWith("Écriture") || e.libelle == "Formatage et écriture" ->
+                    (if (e.etat == Etat.EN_COURS) 65 to "Écriture en cours : gardez la carte immobile" else 80 to "Écriture terminée")
+                e.libelle == "Test réussi" || e.libelle == "Lecture terminée" -> 100 to "Terminé"
+                else -> continue
+            }
+            if (v >= pourcent) { pourcent = v; texte = t }
+        }
+        if (etapes.any { it.etat == Etat.ECHEC }) texte = "Échec : voir le journal"
+        return pourcent to texte
+    }
+
     /** Un enregistrement NDEF résumé : type, taille et début du contenu lisible (« URI https://… », « MIME application/… »). */
     fun resumeEnregistrement(tnf: Short, type: ByteArray, payload: ByteArray): String {
         val t = String(type, Charsets.US_ASCII)
@@ -125,7 +152,7 @@ object LaboNfc {
     }
 
     /** Mode LECTURE : inspecte la carte et affiche son contenu, sans rien écrire. */
-    fun demarrerLecture(a: Activity, journal: (Etape) -> Unit, surFin: () -> Unit) = lecteur(a) { tag ->
+    fun demarrerLecture(a: Activity, journal: (Etape) -> Unit, surFin: () -> Unit) = lecteur(a, journal, surFin) { tag ->
         val debut = maintenant()
         val (ndef, _, _) = inspecter(tag, journal)
         contenuActuel(ndef, journal)
@@ -142,7 +169,7 @@ object LaboNfc {
         // `aVerifier` garde alors le message attendu (null = aucune vérification en attente).
         var aVerifier: NdefMessage? = null
         var debutVerification = 0L
-        lecteur(a) { tag ->
+        lecteur(a, journal, { surFin(false) }) { tag ->
             // --- Deuxième présentation : relecture de contrôle après un formatage ---
             val attendu = aVerifier
             if (attendu != null) {
@@ -203,10 +230,12 @@ object LaboNfc {
      * Version 1.20 : on NE met PAS l'option « ignorer le contrôle NDEF ». Avec elle, Android ne signale ni « Ndef » ni « NdefFormatable » : une carte
      * vierge apparaissait à tort comme « ne prend pas en charge NDEF » (constat du 13/11/2026 sur une Mifare Classic 1K, que TagInfo voyait bien formatable).
      */
-    private fun lecteur(a: Activity, surCarte: (Tag) -> Unit) {
+    private fun lecteur(a: Activity, journal: (Etape) -> Unit, surErreur: () -> Unit, surCarte: (Tag) -> Unit) {
         val adaptateur = NfcAdapter.getDefaultAdapter(a) ?: return
-        adaptateur.enableReaderMode(a, { tag -> try { surCarte(tag) } catch (e: Exception) { /* chaque étape a son propre journal */ } },
-            NfcAdapter.FLAG_READER_NFC_A or NfcAdapter.FLAG_READER_NFC_B or NfcAdapter.FLAG_READER_NFC_F or NfcAdapter.FLAG_READER_NFC_V, Bundle())
+        adaptateur.enableReaderMode(a, { tag ->
+            // Version 1.21 : une erreur inattendue est AFFICHÉE dans le journal (avant, elle était avalée et « rien ne se produisait »)
+            try { surCarte(tag) } catch (e: Exception) { journal(Etape("Erreur inattendue", Etat.ECHEC, (e.message ?: e.javaClass.simpleName) + " — éloignez la carte, reposez-la et recommencez")); surErreur() }
+        }, NfcAdapter.FLAG_READER_NFC_A or NfcAdapter.FLAG_READER_NFC_B or NfcAdapter.FLAG_READER_NFC_F or NfcAdapter.FLAG_READER_NFC_V, Bundle())
     }
 
     fun arreter(a: Activity) { try { NfcAdapter.getDefaultAdapter(a)?.disableReaderMode(a) } catch (e: Exception) {} }

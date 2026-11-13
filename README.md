@@ -2,6 +2,11 @@
 
 Suivi des **arrivées et départs du personnel de maison** (aide ménagère, gardien, laveur de véhicule, cuisinier(ère), chauffeur…), fiche de chaque personne, sociétés de placement, bilans et évaluations. Tout reste **sur le téléphone, chiffré**.
 
+## Version 1.21 — Laboratoire NFC : jauge de progression, temps écoulé et conseils
+- **Jauge de progression** (0 à 100 %) avec l'étape en cours et le **temps écoulé** pendant un test (lecture, écriture, effacement). Durée habituelle : 1 à 3 secondes une fois la carte détectée.
+- **Conseil automatique** : sans carte détectée après 8 s, l'écran explique qu'Android ne détecte qu'une **nouvelle présentation** (éloigner puis reposer la carte, antenne au dos vers le haut, pas d'étui épais) ; au-delà de 20 s en cours d'écriture, il demande de garder la carte immobile.
+- Une **erreur inattendue** pendant le test est maintenant écrite dans le journal (avant, elle pouvait être avalée et « rien ne se produisait »).
+
 ## Version 1.20 — Laboratoire NFC : carte vierge Mifare Classic vérifiée à la présentation suivante
 - Correction : sur une carte VIERGE (ex. Mifare Classic 1K), le test d'écriture affichait « Test échoué » alors que l'écriture avait réussi : Android ne voit la carte comme « NDEF » qu'après le formatage. Maintenant, après « Formatage et écriture », l'écran demande d'**éloigner puis reposer la carte** ; elle est alors **relue et comparée octet par octet** automatiquement (« Test réussi » ou « Test échoué »).
 - Correction (constat du 13/11/2026 sur une Mifare Classic 1K vierge) : le laboratoire démarrait la lecture avec l'option « ignorer le contrôle NDEF », si bien qu'Android ne signalait plus la carte comme formatable (« Cette carte ne prend pas en charge NDEF »). L'option est retirée : la carte vierge est reconnue et formatée.
