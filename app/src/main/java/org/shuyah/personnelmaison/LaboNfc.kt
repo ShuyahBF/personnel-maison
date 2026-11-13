@@ -136,43 +136,77 @@ object LaboNfc {
      * Mode ÉCRITURE (ou EFFACEMENT si `message` est null) : inspecte, prépare, écrit (en formatant si besoin), puis RELIT la carte et compare avec ce qui devait être écrit.
      * Ne verrouille jamais la carte.
      */
-    fun demarrerEcriture(a: Activity, message: NdefMessage?, journal: (Etape) -> Unit, surFin: (Boolean) -> Unit) = lecteur(a) { tag ->
-        val debutTotal = maintenant()
-        val (ndef, formatable, inscriptible) = inspecter(tag, journal)
-        if (ndef == null && formatable == null) { journal(Etape("Arrêt", Etat.ECHEC, "Rien ne peut être écrit sur cette carte.")); surFin(false); return@lecteur }
-        if (!inscriptible) { journal(Etape("Arrêt", Etat.ECHEC, "La carte est en lecture seule (verrou définitif) : utilisez une carte vierge.")); surFin(false); return@lecteur }
-        contenuActuel(ndef, journal)
-        val aEcrire = message ?: NdefMessage(NdefRecord(NdefRecord.TNF_EMPTY, ByteArray(0), ByteArray(0), ByteArray(0)))
-        val taille = aEcrire.byteArrayLength
-        message?.records?.forEachIndexed { i, r -> journal(Etape("Message préparé · enregistrement ${i + 1}", Etat.INFO, resumeEnregistrement(r.tnf, r.type, r.payload))) }
-        if (message == null) journal(Etape("Préparation", Etat.INFO, "Effacement : un message vide sera écrit"))
-        journal(Etape("Taille du message", if (ndef != null && ndef.maxSize < taille) Etat.ECHEC else Etat.OK, "$taille octets" + (ndef?.let { " sur ${it.maxSize} disponibles" } ?: "")))
-        if (ndef != null && ndef.maxSize < taille) { journal(Etape("Arrêt", Etat.ECHEC, "Carte trop petite : prenez une NTAG213 ou plus.")); surFin(false); return@lecteur }
-        try {
-            val t0 = maintenant()
-            journal(Etape(if (ndef != null) "Écriture" else "Formatage et écriture", Etat.EN_COURS, "gardez la carte contre le téléphone…"))
-            if (ndef != null) { ndef.connect(); try { ndef.writeNdefMessage(aEcrire) } finally { try { ndef.close() } catch (e: Exception) {} } }
-            else { formatable!!.connect(); try { formatable.format(aEcrire) } finally { try { formatable.close() } catch (e: Exception) {} } }
-            journal(Etape(if (ndef != null) "Écriture" else "Formatage et écriture", Etat.OK, "terminée", maintenant() - t0))
-            // Vérification : on rouvre la carte (nouvelle connexion) et on compare octet par octet
-            val t1 = maintenant()
-            val relu = Ndef.get(tag)
-            if (relu == null) { journal(Etape("Vérification", Etat.ECHEC, "Impossible de rouvrir la carte pour la relire")); surFin(false); return@lecteur }
-            relu.connect()
-            val lu = try { relu.ndefMessage } finally { try { relu.close() } catch (e: Exception) {} }
-            val identique = lu != null && lu.toByteArray().contentEquals(aEcrire.toByteArray())
-            journal(Etape("Vérification par relecture", if (identique) Etat.OK else Etat.ECHEC, if (identique) "le contenu relu est IDENTIQUE à celui écrit (${lu!!.byteArrayLength} octets)" else "le contenu relu est DIFFÉRENT de celui écrit", maintenant() - t1))
-            journal(Etape(if (identique) "Test réussi" else "Test échoué", if (identique) Etat.OK else Etat.ECHEC, "", maintenant() - debutTotal))
-            surFin(identique)
-        } catch (e: Exception) {
-            journal(Etape("Écriture", Etat.ECHEC, "interrompue : " + (e.message ?: e.javaClass.simpleName) + " — gardez la carte contre le téléphone et recommencez")); surFin(false)
+    fun demarrerEcriture(a: Activity, message: NdefMessage?, journal: (Etape) -> Unit, surFin: (Boolean) -> Unit) {
+        // Version 1.20 : une carte VIERGE (ex. Mifare Classic) n'est « NDEF » qu'après le formatage ; Android ne met pas à jour la liste de
+        // ses technologies pendant la même présentation. La vérification par relecture se fait donc à la présentation SUIVANTE de la carte :
+        // `aVerifier` garde alors le message attendu (null = aucune vérification en attente).
+        var aVerifier: NdefMessage? = null
+        var debutVerification = 0L
+        lecteur(a) { tag ->
+            // --- Deuxième présentation : relecture de contrôle après un formatage ---
+            val attendu = aVerifier
+            if (attendu != null) {
+                aVerifier = null
+                journal(Etape("Carte représentée", Etat.OK, "Identifiant " + hex(tag.id)))
+                val relu = Ndef.get(tag)
+                if (relu == null) { journal(Etape("Vérification par relecture", Etat.ECHEC, "la carte n'est pas reconnue comme formatée NDEF")); surFin(false); return@lecteur }
+                try { relu.connect(); val lu = relu.ndefMessage
+                    val identique = lu != null && lu.toByteArray().contentEquals(attendu.toByteArray())
+                    journal(Etape("Vérification par relecture", if (identique) Etat.OK else Etat.ECHEC, if (identique) "le contenu relu est IDENTIQUE à celui écrit (${lu!!.byteArrayLength} octets)" else "le contenu relu est DIFFÉRENT de celui écrit", maintenant() - debutVerification))
+                    journal(Etape(if (identique) "Test réussi" else "Test échoué", if (identique) Etat.OK else Etat.ECHEC))
+                    surFin(identique)
+                } catch (e: Exception) { journal(Etape("Vérification par relecture", Etat.ECHEC, "interrompue : " + (e.message ?: e.javaClass.simpleName))); surFin(false) }
+                finally { try { relu.close() } catch (e: Exception) {} }
+                return@lecteur
+            }
+            // --- Première présentation : inspection, écriture (avec formatage si besoin) ---
+            val debutTotal = maintenant()
+            val (ndef, formatable, inscriptible) = inspecter(tag, journal)
+            if (ndef == null && formatable == null) { journal(Etape("Arrêt", Etat.ECHEC, "Rien ne peut être écrit sur cette carte.")); surFin(false); return@lecteur }
+            if (!inscriptible) { journal(Etape("Arrêt", Etat.ECHEC, "La carte est en lecture seule (verrou définitif) : utilisez une carte vierge.")); surFin(false); return@lecteur }
+            contenuActuel(ndef, journal)
+            val aEcrire = message ?: NdefMessage(NdefRecord(NdefRecord.TNF_EMPTY, ByteArray(0), ByteArray(0), ByteArray(0)))
+            val taille = aEcrire.byteArrayLength
+            message?.records?.forEachIndexed { i, r -> journal(Etape("Message préparé · enregistrement ${i + 1}", Etat.INFO, resumeEnregistrement(r.tnf, r.type, r.payload))) }
+            if (message == null) journal(Etape("Préparation", Etat.INFO, "Effacement : un message vide sera écrit"))
+            journal(Etape("Taille du message", if (ndef != null && ndef.maxSize < taille) Etat.ECHEC else Etat.OK, "$taille octets" + (ndef?.let { " sur ${it.maxSize} disponibles" } ?: "")))
+            if (ndef != null && ndef.maxSize < taille) { journal(Etape("Arrêt", Etat.ECHEC, "Carte trop petite : prenez une NTAG213 ou plus.")); surFin(false); return@lecteur }
+            try {
+                val t0 = maintenant()
+                journal(Etape(if (ndef != null) "Écriture" else "Formatage et écriture", Etat.EN_COURS, "gardez la carte contre le téléphone…"))
+                if (ndef != null) { ndef.connect(); try { ndef.writeNdefMessage(aEcrire) } finally { try { ndef.close() } catch (e: Exception) {} } }
+                else { formatable!!.connect(); try { formatable.format(aEcrire) } finally { try { formatable.close() } catch (e: Exception) {} } }
+                journal(Etape(if (ndef != null) "Écriture" else "Formatage et écriture", Etat.OK, "terminée", maintenant() - t0))
+                if (ndef == null) {
+                    // Carte qui vient d'être formatée : relecture à la présentation suivante (voir plus haut)
+                    aVerifier = aEcrire; debutVerification = maintenant()
+                    journal(Etape("Vérification à faire", Etat.EN_COURS, "ÉCRITURE RÉUSSIE. Éloignez la carte du téléphone puis REPOSEZ-LA : elle sera relue et comparée automatiquement."))
+                    return@lecteur
+                }
+                // Carte déjà formatée : on rouvre la carte (nouvelle connexion) et on compare octet par octet
+                val t1 = maintenant()
+                val relu = Ndef.get(tag)
+                if (relu == null) { journal(Etape("Vérification", Etat.ECHEC, "Impossible de rouvrir la carte pour la relire")); surFin(false); return@lecteur }
+                relu.connect()
+                val lu = try { relu.ndefMessage } finally { try { relu.close() } catch (e: Exception) {} }
+                val identique = lu != null && lu.toByteArray().contentEquals(aEcrire.toByteArray())
+                journal(Etape("Vérification par relecture", if (identique) Etat.OK else Etat.ECHEC, if (identique) "le contenu relu est IDENTIQUE à celui écrit (${lu!!.byteArrayLength} octets)" else "le contenu relu est DIFFÉRENT de celui écrit", maintenant() - t1))
+                journal(Etape(if (identique) "Test réussi" else "Test échoué", if (identique) Etat.OK else Etat.ECHEC, "", maintenant() - debutTotal))
+                surFin(identique)
+            } catch (e: Exception) {
+                journal(Etape("Écriture", Etat.ECHEC, "interrompue : " + (e.message ?: e.javaClass.simpleName) + " — gardez la carte contre le téléphone et recommencez")); surFin(false)
+            }
         }
     }
 
+    /**
+     * Version 1.20 : on NE met PAS l'option « ignorer le contrôle NDEF ». Avec elle, Android ne signale ni « Ndef » ni « NdefFormatable » : une carte
+     * vierge apparaissait à tort comme « ne prend pas en charge NDEF » (constat du 13/11/2026 sur une Mifare Classic 1K, que TagInfo voyait bien formatable).
+     */
     private fun lecteur(a: Activity, surCarte: (Tag) -> Unit) {
         val adaptateur = NfcAdapter.getDefaultAdapter(a) ?: return
         adaptateur.enableReaderMode(a, { tag -> try { surCarte(tag) } catch (e: Exception) { /* chaque étape a son propre journal */ } },
-            NfcAdapter.FLAG_READER_NFC_A or NfcAdapter.FLAG_READER_NFC_B or NfcAdapter.FLAG_READER_NFC_F or NfcAdapter.FLAG_READER_NFC_V or NfcAdapter.FLAG_READER_SKIP_NDEF_CHECK, Bundle())
+            NfcAdapter.FLAG_READER_NFC_A or NfcAdapter.FLAG_READER_NFC_B or NfcAdapter.FLAG_READER_NFC_F or NfcAdapter.FLAG_READER_NFC_V, Bundle())
     }
 
     fun arreter(a: Activity) { try { NfcAdapter.getDefaultAdapter(a)?.disableReaderMode(a) } catch (e: Exception) {} }
