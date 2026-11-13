@@ -414,5 +414,6 @@ fun EcranPlus(ouvrir: (Ecran) -> Unit) = Page("Plus") {
     GrosBouton(Icons.Filled.Medication, "Médicaments", Bleu, sousTexte = "Rappels, prises, partage avec la famille") { ouvrir(Ecran.Medicaments) }
     GrosBouton(Icons.Filled.Restaurant, "Repas", Orange, sousTexte = "Je prends mon repas, repas non pris") { ouvrir(Ecran.Repas) }
     GrosBouton(Icons.Filled.FamilyRestroom, "Ma famille", Rouge, sousTexte = "Proches liés, messagerie chiffrée") { ouvrir(Ecran.Famille) }
+    GrosBouton(Icons.Filled.Help, "Aide et à propos", Gris, sousTexte = "Réglages à faire, cochés automatiquement") { ouvrir(Ecran.Aide) }
     GrosBouton(Icons.Filled.AccountCircle, "Mon profil", Orange, sousTexte = "Coordonnées, adresse, position") { ouvrir(Ecran.Profil) }
 }

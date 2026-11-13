@@ -2,6 +2,10 @@
 
 Suivi des **arrivées et départs du personnel de maison** (aide ménagère, gardien, laveur de véhicule, cuisinier(ère), chauffeur…), fiche de chaque personne, sociétés de placement, bilans et évaluations. Tout reste **sur le téléphone, chiffré**.
 
+## Version 1.13 — Étiquette NFC des repas, Aide et à propos
+- **Étiquette NFC des repas** (écran Repas) : une étiquette collée sur la table ou le réfrigérateur déclare **« Je prends mon repas »** au 1er contact et **« Repas terminé »** au 2e ; elle peut être liée à un repas précis ou « **selon l'heure** » (le repas suivi le plus proche de l'heure actuelle, de 2 h 30 avant à 1 h 30 après). Les proches choisis sont prévenus. Contenu : un identifiant seulement.
+- **Plus → Aide et à propos** : version, et **liste des réglages à faire**, cochés automatiquement quand l'application peut les vérifier (économie de batterie, alarmes exactes, notifications, NFC, caméra, localisation, GPS, compte famille, proche vérifié, domicile) avec un bouton « ▶ » qui ouvre le bon réglage ; la liste est relue toutes les 2 secondes (on peut aller dans les réglages et revenir). Réglages Xiaomi (démarrage automatique, verrouillage en mémoire) à cocher soi-même. Rubrique « À savoir » : téléphone verrouillé, redémarrage, données mobiles, veille, changement de téléphone, étiquettes.
+
 ## Version 1.12 — Étiquette NFC des médicaments
 - Dans la fiche d'un médicament enregistré : **Étiquette NFC → Écrire une étiquette**. On approche une étiquette NFC vierge (autocollant ou carte NTAG213 ou plus) du dos du téléphone ; elle est écrite (ou formatée) et collée sur la boîte de médicaments.
 - **Poser le téléphone sur l'étiquette confirme la prise** (même application fermée, téléphone déverrouillé) : la prise la plus proche de l'heure actuelle (de 6 h avant à 90 minutes après son heure prévue) est confirmée, le rappel disparaît et les proches choisis sont prévenus. Un message indique la prise confirmée.

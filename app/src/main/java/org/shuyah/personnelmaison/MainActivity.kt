@@ -34,6 +34,7 @@ sealed class Ecran {
     object Famille : Ecran()
     object Medicaments : Ecran()
     object Repas : Ecran()
+    object Aide : Ecran()
     data class FormMedicament(val id: Long?) : Ecran()
     data class FamilleLien(val id: String) : Ecran()
     object BudgetStats : Ecran()
@@ -67,24 +68,38 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(i: Intent) { super.onNewIntent(i); setIntent(i); traiterEtiquette(i) }
 
     /**
-     * Étiquette NFC d'un médicament : confirme la prise la plus proche de l'heure actuelle (de 6 h avant à 90 minutes après son heure prévue), prévient les proches
-     * choisis, et affiche le résultat. Une étiquette écrite par un autre téléphone est ignorée.
+     * Étiquette NFC lue. MÉDICAMENT : confirme la prise la plus proche de l'heure actuelle (de 6 h avant à 90 minutes après son heure prévue). REPAS : « Je prends mon repas »,
+     * puis « Repas terminé » au second contact ; le repas est celui de l'étiquette, ou le plus proche de l'heure si elle est « selon l'heure ». Les proches choisis sont prévenus.
+     * Une étiquette écrite par un autre téléphone est ignorée.
      */
     private fun traiterEtiquette(i: Intent?) {
-        val (code, medicamentId) = EtiquetteNfc.lireIntent(i) ?: return
+        val e = EtiquetteNfc.lireIntent(i) ?: return
         i?.action = null                                                       // traitée une seule fois (rotation de l'écran, retour à l'application)
-        if (code != EtiquetteNfc.codeInstallation(this)) { Toast.makeText(this, "Cette étiquette n'a pas été écrite par ce téléphone.", Toast.LENGTH_LONG).show(); return }
+        if (e.code != EtiquetteNfc.codeInstallation(this)) { Toast.makeText(this, "Cette étiquette n'a pas été écrite par ce téléphone.", Toast.LENGTH_LONG).show(); return }
         lifecycleScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            val dao = Base.dao(this@MainActivity); val zone = java.time.ZoneId.systemDefault()
-            val m = dao.medicament(medicamentId)
-            val message: String = if (m == null) "Médicament introuvable : l'étiquette est périmée." else {
-                val jour = java.time.LocalDate.now()
-                val candidates = (RappelsMedicaments.prisesPrevues(m, jour.minusDays(1), zone) + RappelsMedicaments.prisesPrevues(m, jour, zone)).filter { dao.prise(m.id, it)?.statut != "PRIS" }
-                val prevu = EtiquetteNfc.choisirPrise(candidates, System.currentTimeMillis())
-                if (prevu == null) "${m.nom} : aucune prise à confirmer pour le moment."
-                else { PlanificateurMedicaments.confirmerPrise(this@MainActivity, m.id, prevu); "✔ ${m.nom} : prise de " + RappelsMedicaments.libelleHeure(java.time.Instant.ofEpochMilli(prevu).atZone(zone).let { it.hour * 60 + it.minute }) + " confirmée." }
-            }
+            val message = if (e.type == "med") confirmerMedicament(e.valeur.toLongOrNull() ?: 0L) else declarerRepas(e.valeur)
             runOnUiThread { Toast.makeText(this@MainActivity, message, Toast.LENGTH_LONG).show() }
+        }
+    }
+
+    private suspend fun confirmerMedicament(medicamentId: Long): String {
+        val dao = Base.dao(this); val zone = java.time.ZoneId.systemDefault()
+        val m = dao.medicament(medicamentId) ?: return "Médicament introuvable : l'étiquette est périmée."
+        val jour = java.time.LocalDate.now()
+        val candidates = (RappelsMedicaments.prisesPrevues(m, jour.minusDays(1), zone) + RappelsMedicaments.prisesPrevues(m, jour, zone)).filter { dao.prise(m.id, it)?.statut != "PRIS" }
+        val prevu = EtiquetteNfc.choisirPrise(candidates, System.currentTimeMillis()) ?: return "${m.nom} : aucune prise à confirmer pour le moment."
+        PlanificateurMedicaments.confirmerPrise(this, m.id, prevu)
+        return "✔ ${m.nom} : prise de " + RappelsMedicaments.libelleHeure(java.time.Instant.ofEpochMilli(prevu).atZone(zone).let { it.hour * 60 + it.minute }) + " confirmée."
+    }
+
+    private suspend fun declarerRepas(valeur: String): String {
+        val maintenant = java.time.LocalTime.now().let { it.hour * 60 + it.minute }
+        val code = if (valeur == EtiquetteNfc.REPAS_AUTO) EtiquetteNfc.choisirRepas(RappelsRepas.REPAS.filter { ReglagesFamille.repasActif(this, it.code) }.map { it.code to ReglagesFamille.repasMinutes(this, it.code) }, maintenant) else valeur
+        val repas = code?.let { RappelsRepas.repas(it) } ?: return "Aucun repas à déclarer pour le moment."
+        return when (ReglagesFamille.repasEtat(this, repas.code, PlanificateurRepas.jour())) {
+            "termine" -> "${repas.nom} : déjà terminé."
+            "prend" -> { PlanificateurRepas.declarer(this, repas.code, "termine"); "✔ ${repas.nom} terminé." }
+            else -> { PlanificateurRepas.declarer(this, repas.code, "prend"); "🍽 Bon appétit ! ${repas.nom} déclaré." }
         }
     }
 }
@@ -129,6 +144,7 @@ private fun Racine() {
                 Ecran.Famille -> EcranFamille(::ouvrir, ::retour)
                 Ecran.Medicaments -> EcranMedicaments(::ouvrir, ::retour)
                 Ecran.Repas -> EcranRepas(::retour)
+                Ecran.Aide -> EcranAide(::ouvrir, ::retour)
                 is Ecran.FormMedicament -> EcranFormMedicament(courant.id, ::retour)
                 is Ecran.FamilleLien -> EcranLienFamille(courant.id, ::retour)
                 is Ecran.FicheOperation -> EcranFicheOperation(courant.id, ::ouvrir, ::retour)

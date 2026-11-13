@@ -33,4 +33,21 @@ class EtiquetteNfcTest {
         assertNull(EtiquetteNfc.choisirPrise(listOf(soir), maintenant))                                // trop tôt (8 h avant la prochaine)
         assertNull(EtiquetteNfc.choisirPrise(emptyList(), maintenant))
     }
+
+    @Test fun etiquetteDeRepas() {
+        val c = EtiquetteNfc.chargeRepas("a1b2c3d4", "dejeuner")
+        assertEquals("pm-repas|a1b2c3d4|dejeuner", c)
+        assertEquals("a1b2c3d4" to "dejeuner", EtiquetteNfc.lireChargeRepas(c))
+        assertEquals("a1b2c3d4" to "auto", EtiquetteNfc.lireChargeRepas(EtiquetteNfc.chargeRepas("a1b2c3d4", "auto")))
+        assertNull(EtiquetteNfc.lireChargeRepas("pm-repas|a1b2c3d4|brunch")); assertNull(EtiquetteNfc.lireChargeRepas("pm-med|a1b2c3d4|12")); assertNull(EtiquetteNfc.lireCharge(c))
+    }
+
+    @Test fun repasSelonLHeure() {
+        val suivis = listOf("petit_dejeuner" to 450, "dejeuner" to 750, "diner" to 1170)       // 07:30, 12:30, 19:30
+        assertEquals("dejeuner", EtiquetteNfc.choisirRepas(suivis, 12 * 60 + 50))              // 20 min après l'heure
+        assertEquals("dejeuner", EtiquetteNfc.choisirRepas(suivis, 11 * 60))                   // 1 h 30 avant
+        assertEquals("diner", EtiquetteNfc.choisirRepas(suivis, 19 * 60))
+        assertNull(EtiquetteNfc.choisirRepas(suivis, 15 * 60 + 30))                            // entre deux repas : rien
+        assertNull(EtiquetteNfc.choisirRepas(emptyList(), 12 * 60))
+    }
 }

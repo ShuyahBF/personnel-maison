@@ -53,6 +53,8 @@ fun EcranRepas(retour: () -> Unit) = Page("Repas", retour) {
         }
     }
 
+    CarteEtiquetteRepas()
+
     Carte("Mes heures de repas", Icons.Filled.Schedule) {
         RappelsRepas.REPAS.forEach { r ->
             var actif by remember { mutableStateOf(ReglagesFamille.repasActif(c, r.code)) }
@@ -64,6 +66,37 @@ fun EcranRepas(retour: () -> Unit) = Page("Repas", retour) {
             if (actif) ChampHeure("Heure du ${r.nom.lowercase()}", minutes) { minutes = it; ReglagesFamille.repasMinutes(c, r.code, it); PlanificateurRepas.planifier(c, r.code) }
         }
         Text("À l'heure prévue, un rappel s'affiche. Si le repas n'est pas déclaré ${RappelsRepas.DELAI_ALERTE_MIN} minutes plus tard, les proches choisis (fiche de chaque proche, dans Ma famille) reçoivent « n'a pas encore pris son repas ».", fontSize = 12.sp, color = Gris, modifier = Modifier.padding(top = 6.dp))
+    }
+}
+
+/** Étiquette NFC des repas : posée sur la table ou le réfrigérateur, elle déclare « Je prends mon repas » (1er contact) puis « Repas terminé » (2e contact). */
+@Composable
+private fun CarteEtiquetteRepas() {
+    val c = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var choix by remember { mutableStateOf("Selon l'heure (recommandé)") }
+    var ecriture by remember { mutableStateOf(false) }
+    var resultat by remember { mutableStateOf("") }
+    val nfc = remember(ecriture) { FamilleNfc.etatNfc(c) }
+    DisposableEffect(ecriture) { onDispose { FamilleNfc.activite(c)?.let { FamilleNfc.arreterLecteur(it) } } }
+    Carte("Étiquette NFC", Icons.Filled.Nfc) {
+        Text("Collez une étiquette NFC sur la table ou le réfrigérateur : poser le téléphone dessus déclare « Je prends mon repas », et un second contact « Repas terminé ». Vos proches sont prévenus. L'étiquette ne contient qu'un identifiant.", fontSize = 13.sp, color = Gris)
+        when {
+            nfc == 0 -> Text("Ce téléphone n'a pas de NFC.", fontSize = 14.sp, color = Gris)
+            nfc == 1 -> Text("Le NFC est désactivé : activez-le dans les réglages du téléphone.", fontSize = 14.sp, color = Orange)
+            ecriture -> Text("Approchez maintenant une étiquette NFC vierge du téléphone (dos du téléphone)…", fontSize = 14.sp, color = BleuNuit)
+            else -> {
+                Liste("Repas de l'étiquette", choix, listOf("Selon l'heure (recommandé)") + RappelsRepas.REPAS.map { it.nom }) { choix = it }
+                GrosBouton(Icons.Filled.Nfc, "Écrire une étiquette", Bleu) {
+                    val a = FamilleNfc.activite(c)
+                    if (a == null) resultat = "Écran indisponible, réessayez."
+                    else { resultat = ""; ecriture = true
+                        val code = RappelsRepas.REPAS.firstOrNull { it.nom == choix }?.code ?: EtiquetteNfc.REPAS_AUTO
+                        EtiquetteNfc.demarrerEcritureRepas(a, code) { ok, message -> scope.launch { resultat = message; if (ok) { ecriture = false; FamilleNfc.arreterLecteur(a) } } } }
+                }
+            }
+        }
+        if (resultat.isNotBlank()) Text(resultat, fontSize = 13.sp, color = if (resultat.startsWith("Étiquette")) Vert else Rouge, modifier = Modifier.padding(top = 4.dp))
     }
 }
 
