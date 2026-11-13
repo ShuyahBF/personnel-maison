@@ -18,6 +18,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.lifecycleScope
+import android.content.Intent
+import android.widget.Toast
+import kotlinx.coroutines.launch
 
 /** Les écrans de l'application. Les quatre premiers sont les onglets du bas ; les autres s'ouvrent par-dessus. */
 sealed class Ecran {
@@ -57,6 +60,32 @@ class MainActivity : ComponentActivity() {
         PlanificateurRepas.planifierTout(this)                // rappels de repas : alarmes remises à jour à chaque ouverture
         SurveillanceFamille.programmer(this)                  // veille des proches (médicaments oubliés, messages)
         setContent { MaterialTheme { Racine() } }
+        traiterEtiquette(intent)
+    }
+
+    /** L'application est déjà ouverte et une étiquette est approchée (mode « singleTask » : l'intention arrive ici). */
+    override fun onNewIntent(i: Intent) { super.onNewIntent(i); setIntent(i); traiterEtiquette(i) }
+
+    /**
+     * Étiquette NFC d'un médicament : confirme la prise la plus proche de l'heure actuelle (de 6 h avant à 90 minutes après son heure prévue), prévient les proches
+     * choisis, et affiche le résultat. Une étiquette écrite par un autre téléphone est ignorée.
+     */
+    private fun traiterEtiquette(i: Intent?) {
+        val (code, medicamentId) = EtiquetteNfc.lireIntent(i) ?: return
+        i?.action = null                                                       // traitée une seule fois (rotation de l'écran, retour à l'application)
+        if (code != EtiquetteNfc.codeInstallation(this)) { Toast.makeText(this, "Cette étiquette n'a pas été écrite par ce téléphone.", Toast.LENGTH_LONG).show(); return }
+        lifecycleScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val dao = Base.dao(this@MainActivity); val zone = java.time.ZoneId.systemDefault()
+            val m = dao.medicament(medicamentId)
+            val message: String = if (m == null) "Médicament introuvable : l'étiquette est périmée." else {
+                val jour = java.time.LocalDate.now()
+                val candidates = (RappelsMedicaments.prisesPrevues(m, jour.minusDays(1), zone) + RappelsMedicaments.prisesPrevues(m, jour, zone)).filter { dao.prise(m.id, it)?.statut != "PRIS" }
+                val prevu = EtiquetteNfc.choisirPrise(candidates, System.currentTimeMillis())
+                if (prevu == null) "${m.nom} : aucune prise à confirmer pour le moment."
+                else { PlanificateurMedicaments.confirmerPrise(this@MainActivity, m.id, prevu); "✔ ${m.nom} : prise de " + RappelsMedicaments.libelleHeure(java.time.Instant.ofEpochMilli(prevu).atZone(zone).let { it.hour * 60 + it.minute }) + " confirmée." }
+            }
+            runOnUiThread { Toast.makeText(this@MainActivity, message, Toast.LENGTH_LONG).show() }
+        }
     }
 }
 

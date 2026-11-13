@@ -2,6 +2,12 @@
 
 Suivi des **arrivées et départs du personnel de maison** (aide ménagère, gardien, laveur de véhicule, cuisinier(ère), chauffeur…), fiche de chaque personne, sociétés de placement, bilans et évaluations. Tout reste **sur le téléphone, chiffré**.
 
+## Version 1.12 — Étiquette NFC des médicaments
+- Dans la fiche d'un médicament enregistré : **Étiquette NFC → Écrire une étiquette**. On approche une étiquette NFC vierge (autocollant ou carte NTAG213 ou plus) du dos du téléphone ; elle est écrite (ou formatée) et collée sur la boîte de médicaments.
+- **Poser le téléphone sur l'étiquette confirme la prise** (même application fermée, téléphone déverrouillé) : la prise la plus proche de l'heure actuelle (de 6 h avant à 90 minutes après son heure prévue) est confirmée, le rappel disparaît et les proches choisis sont prévenus. Un message indique la prise confirmée.
+- **Confidentialité** : l'étiquette ne contient qu'un identifiant (« pm-med », code de l'installation, numéro du médicament) : **aucun nom de médicament ni donnée de santé**. Une étiquette écrite par un autre téléphone est ignorée.
+- Messages clairs si l'étiquette est en lecture seule, trop petite ou n'est pas une étiquette inscriptible (carte bancaire, de transport) ; l'application s'ouvre en mode « une seule fenêtre » (singleTask).
+
 ## Version 1.11 — Ma famille : repas partagés et repas non pris
 - Nouvel écran **Plus → Repas** : petit-déjeuner, déjeuner, dîner (et collation, désactivée par défaut) avec leur **heure** réglable et un interrupteur chacun. Les repas d'aujourd'hui affichent leur état (à venir, à déclarer, en train de manger, terminé, non déclaré) et les boutons **Je mange** et **Terminé**.
 - **Rappel à l'heure du repas** avec le bouton « Je prends mon repas » ; **si le repas n'est pas déclaré 60 minutes plus tard**, les proches choisis reçoivent « Awa n'a pas encore pris son déjeuner ».

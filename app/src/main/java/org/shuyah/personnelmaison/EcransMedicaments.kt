@@ -131,6 +131,28 @@ fun EcranFormMedicament(id: Long?, retour: () -> Unit) = Page(if (id == null) "N
         Text("Seuls les proches cochés dans leur fiche (Ma famille) reçoivent l'information, chiffrée de bout en bout.", fontSize = 12.sp, color = Gris)
         if (id != null) Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) { Text("Traitement en cours (rappels actifs)", Modifier.weight(1f), fontSize = 15.sp, color = BleuNuit); Switch(actif, { actif = it }) }
     }
+    // Étiquette NFC : écrite pour CE médicament (il doit d'abord être enregistré)
+    if (id != null) {
+        var ecriture by remember { mutableStateOf(false) }
+        var resultat by remember { mutableStateOf("") }
+        val nfc = remember(ecriture) { FamilleNfc.etatNfc(c) }
+        DisposableEffect(ecriture) { onDispose { FamilleNfc.activite(c)?.let { FamilleNfc.arreterLecteur(it) } } }
+        Carte("Étiquette NFC", Icons.Filled.Nfc) {
+            Text("Collez une étiquette NFC sur la boîte : poser ensuite le téléphone dessus confirme la prise et prévient vos proches. L'étiquette ne contient qu'un identifiant, aucun nom de médicament.", fontSize = 13.sp, color = Gris)
+            when {
+                nfc == 0 -> Text("Ce téléphone n'a pas de NFC.", fontSize = 14.sp, color = Gris)
+                nfc == 1 -> Text("Le NFC est désactivé : activez-le dans les réglages du téléphone.", fontSize = 14.sp, color = Orange)
+                ecriture -> Text("Approchez maintenant une étiquette NFC vierge du téléphone (dos du téléphone)…", fontSize = 14.sp, color = BleuNuit)
+                else -> GrosBouton(Icons.Filled.Nfc, "Écrire une étiquette", Bleu) {
+                    val a = FamilleNfc.activite(c)
+                    if (a == null) resultat = "Écran indisponible, réessayez."
+                    else { resultat = ""; ecriture = true
+                        EtiquetteNfc.demarrerEcriture(a, id) { ok, message -> scope.launch { resultat = message; if (ok) { ecriture = false; FamilleNfc.arreterLecteur(a) } } } }
+                }
+            }
+            if (resultat.isNotBlank()) Text(resultat, fontSize = 13.sp, color = if (resultat.startsWith("Étiquette")) Vert else Rouge, modifier = Modifier.padding(top = 4.dp))
+        }
+    }
     val valide = nom.trim().length >= 2 && heures.isNotEmpty() && jours != 0
     GrosBouton(Icons.Filled.Save, "Enregistrer", Vert, actif = valide) {
         scope.launch {
