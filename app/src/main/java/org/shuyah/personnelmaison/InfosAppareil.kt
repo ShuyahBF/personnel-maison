@@ -5,7 +5,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.BatteryManager
 import android.os.Build
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -63,8 +63,10 @@ fun BarreEtat() {
     var maintenant by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var batterie by remember { mutableStateOf(InfosAppareil.batterie(c)) }
     LaunchedEffect(Unit) { while (true) { maintenant = System.currentTimeMillis(); batterie = InfosAppareil.batterie(c); delay(15_000) } }
-    Column(horizontalAlignment = Alignment.End) {
-        Text(InfosAppareil.libelleDateHeure(maintenant), fontSize = 11.sp, color = Color.White.copy(alpha = 0.9f))
-        Text(InfosAppareil.libelleBatterie(batterie.first, batterie.second), fontSize = 11.sp, color = if (InfosAppareil.batterieFaible(batterie.first, batterie.second)) Color(0xFFF6A35B) else Color.White.copy(alpha = 0.9f))
+    // Date/heure et batterie sur UNE SEULE ligne : « 13/11 16:07 · 🔋 57 % »
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(InfosAppareil.libelleDateHeure(maintenant) + " · ", fontSize = 11.sp, color = Color.White.copy(alpha = 0.9f), maxLines = 1)
+        Text(InfosAppareil.libelleBatterie(batterie.first, batterie.second), fontSize = 11.sp, maxLines = 1,
+            color = if (InfosAppareil.batterieFaible(batterie.first, batterie.second)) Color(0xFFF6A35B) else Color.White.copy(alpha = 0.9f))
     }
 }

@@ -2,6 +2,9 @@
 
 Suivi des **arrivées et départs du personnel de maison** (aide ménagère, gardien, laveur de véhicule, cuisinier(ère), chauffeur…), fiche de chaque personne, sociétés de placement, bilans et évaluations. Tout reste **sur le téléphone, chiffré**.
 
+## Version 1.18 — Date/heure et batterie sur une seule ligne
+- Dans les barres de titre, la date/heure et le niveau de batterie sont maintenant **sur la même ligne** (« 13/11 16:07 · 🔋 57 % »).
+
 ## Version 1.17 — Messagerie permanente : pilule qui clignote et son à l'arrivée d'un message
 - La pastille de la messagerie est redessinée en **pilule « Messages »** (bleue) toujours visible en bas à gauche ; elle devient une **pilule rouge qui clignote** (opacité et taille) avec « N nouveau(x) message(s) » tant qu'il y a des messages non lus.
 - **Bruit à l'arrivée d'un nouveau message** (son de notification du téléphone) quand l'application est ouverte, et **l'en-tête du panneau clignote en orange** ; **pictogramme haut-parleur** dans le panneau pour couper ou rétablir le son (mémorisé). Les anciens messages non lus au démarrage ne sonnent pas ; vos propres messages jamais.
