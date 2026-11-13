@@ -2,6 +2,9 @@
 
 Suivi des **arrivées et départs du personnel de maison** (aide ménagère, gardien, laveur de véhicule, cuisinier(ère), chauffeur…), fiche de chaque personne, sociétés de placement, bilans et évaluations. Tout reste **sur le téléphone, chiffré**.
 
+## Version 1.19 — Messagerie : le texte tapé reste visible quand le clavier monte
+- Correction : quand le clavier s'ouvrait, le panneau de discussion était écrasé (sa hauteur de 60 % était encore réduite par une marge « clavier » en double) et la zone de saisie n'affichait plus le texte tapé (seul le curseur clignotait). Le panneau garde maintenant **au moins 300 dp de hauteur** (ou toute la place disponible), la marge en double est supprimée, la zone de saisie a une hauteur minimale d'une ligne complète et une couleur de texte explicite.
+
 ## Version 1.18 — Date/heure et batterie sur une seule ligne
 - Dans les barres de titre, la date/heure et le niveau de batterie sont maintenant **sur la même ligne** (« 13/11 16:07 · 🔋 57 % »).
 

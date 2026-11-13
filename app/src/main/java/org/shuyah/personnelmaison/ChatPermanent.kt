@@ -126,7 +126,11 @@ fun ChatPermanent(modifier: Modifier = Modifier) {
     }
 
     // Panneau de discussion : 60 % de l'écran
-    Surface(modifier.fillMaxWidth().fillMaxHeight(0.6f).imePadding(), shape = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp), shadowElevation = 12.dp, color = Color.White) {
+    // Hauteur du panneau : 60 % de la place disponible, sans jamais descendre sous 300 dp (ni dépasser la place disponible). Quand le clavier monte, la fenêtre se redimensionne déjà (adjustResize) :
+    // pas de marge « clavier » supplémentaire, sinon la zone de saisie était écrasée et le texte tapé invisible.
+    BoxWithConstraints(modifier.fillMaxWidth()) {
+    val hauteurPanneau = (maxHeight * 0.6f).coerceAtLeast(300.dp).coerceAtMost(maxHeight)
+    Surface(Modifier.fillMaxWidth().height(hauteurPanneau), shape = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp), shadowElevation = 12.dp, color = Color.White) {
         Column(Modifier.fillMaxSize()) {
             // L'en-tête clignote en orange un court instant à l'arrivée d'un message
             var eclair by remember { mutableStateOf(false) }
@@ -156,12 +160,14 @@ fun ChatPermanent(modifier: Modifier = Modifier) {
             if (erreur.isNotBlank()) Text(erreur, color = Rouge, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 12.dp))
             Text("Messages chiffrés de bout en bout. N'écrivez jamais de mot de passe.", fontSize = 10.sp, color = Gris, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
             Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                OutlinedTextField(saisie, { saisie = it }, Modifier.weight(1f), placeholder = { Text("Votre message") }, maxLines = 3)
+                OutlinedTextField(saisie, { saisie = it }, Modifier.weight(1f).heightIn(min = 56.dp), placeholder = { Text("Votre message") }, maxLines = 3,
+                    textStyle = androidx.compose.ui.text.TextStyle(color = BleuNuit, fontSize = 16.sp))
                 Icon(Icons.Filled.Send, "Envoyer", tint = if (saisie.isNotBlank() && proche != null) Bleu else Color(0xFFCBD5E1), modifier = Modifier.padding(start = 8.dp).size(32.dp).clickable(enabled = saisie.isNotBlank() && proche != null) {
                     val texte = saisie; saisie = ""
                     scope.launch { try { ClientFamille.envoyer(c, proche!!, texte); relire() } catch (e: ClientFamille.Erreur) { erreur = e.message.orEmpty(); saisie = texte } }
                 })
             }
         }
+    }
     }
 }
