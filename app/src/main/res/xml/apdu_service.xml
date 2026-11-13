@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Émulation de carte (NFC) de « Ma famille » : le téléphone qui invite répond avec le code d'invitation à l'identifiant d'application ci-dessous (F0 50 4D 46 41 4D 01). -->
+<host-apdu-service xmlns:android="http://schemas.android.com/apk/res/android" android:description="@string/app_name" android:requireDeviceUnlock="true">
+    <aid-group android:category="other" android:description="@string/app_name">
+        <aid-filter android:name="F0504D46414D01" />
+    </aid-group>
+</host-apdu-service>

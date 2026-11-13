@@ -42,8 +42,16 @@ fun EcranFamille(ouvrir: (Ecran) -> Unit, retour: () -> Unit) = Page("Ma famille
     // Les liens sont relus toutes les 10 secondes tant que l'écran est ouvert (un proche peut accepter une invitation ou vérifier le lien)
     LaunchedEffect(inscrit) {
         while (inscrit) {
-            try { liens = ClientFamille.liens(c) } catch (e: ClientFamille.Erreur) { message = e.message.orEmpty() }
-            delay(10_000)
+            try {
+                liens = ClientFamille.liens(c)
+                // Contact NFC : l'autre téléphone nous a transmis l'empreinte de sa clé ; si elle concorde avec la clé du lien, nous confirmons la vérification
+                FamilleNfc.Etat.empreinteRecue?.let { recue ->
+                    liens.firstOrNull { !it.verifieParMoi && FamilleCrypto.empreinte(it.clePublique) == recue }?.let { l ->
+                        ClientFamille.verifier(c, l.id); FamilleNfc.Etat.empreinteRecue = null; FamilleNfc.Etat.arreter(); message = "Lien avec ${l.nom} vérifié par NFC."; liens = ClientFamille.liens(c)
+                    }
+                }
+            } catch (e: ClientFamille.Erreur) { message = e.message.orEmpty() }
+            delay(if (FamilleNfc.Etat.active()) 2_000 else 10_000)
         }
     }
 
@@ -78,6 +86,9 @@ fun EcranFamille(ouvrir: (Ecran) -> Unit, retour: () -> Unit) = Page("Ma famille
             Spacer(Modifier.height(6.dp))
         }
     }
+
+    CarteNfcFamille { id -> ouvrir(Ecran.FamilleLien(id)) }
+    CartePositionFamille()
 
     Carte("Inviter un proche", Icons.Filled.PersonAdd) {
         Text("Un code à usage unique, valable 15 minutes. Donnez-le à votre proche (de vive voix ou par message) : il le saisit dans son application.", fontSize = 13.sp, color = Gris)
@@ -174,6 +185,7 @@ fun EcranLienFamille(lienId: String, retour: () -> Unit) = Page("Ma famille", re
             }
         }
     }
+    if (l.verifie) CartePositionProche(l)
     if (erreur.isNotBlank()) Text(erreur, color = Rouge, fontSize = 13.sp)
     GrosBouton(Icons.Filled.LinkOff, "Rompre le lien", Rouge) { rupture = true }
     if (rupture) Confirmation("Rompre le lien", "Le lien avec ${l.nom} sera supprimé et les messages échangés seront effacés. Continuer ?", {

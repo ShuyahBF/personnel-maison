@@ -35,12 +35,15 @@ object ClientFamille {
     /** Un message déchiffré ; `texte` est null si le déchiffrement a échoué (clé ou message altéré). */
     data class Message(val seq: Long, val deMoi: Boolean, val texte: String?, val creeLe: String)
 
-    private fun prefs(c: Context) = EncryptedSharedPreferences.create(c, "famille_secrets",
+    internal fun prefs(c: Context) = EncryptedSharedPreferences.create(c, "famille_secrets",
         MasterKey.Builder(c).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build(),
         EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV, EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM)
 
     fun inscrit(c: Context) = prefs(c).getString("compte_id", null) != null
     fun nom(c: Context) = prefs(c).getString("nom", "") ?: ""
+    /** Ma clé publique (base64) et son empreinte (échangée par NFC). */
+    fun maClePublique(c: Context) = prefs(c).getString("cle_publique", "") ?: ""
+    fun monEmpreinte(c: Context) = FamilleCrypto.empreinte(maClePublique(c))
 
     /** Appel HTTP : rend le JSON de la réponse ou lève `Erreur` (message du serveur, ou « injoignable »). Jamais sur le fil principal. */
     private fun appel(c: Context, methode: String, chemin: String, corps: JSONObject? = null, authentifie: Boolean = true): JSONObject {
@@ -110,4 +113,25 @@ object ClientFamille {
             Message(m.getLong("seq"), m.getString("de") == moi, FamilleCrypto.dechiffrer(k, m.getString("nonce"), m.getString("chiffre"), lien.id), m.getString("cree_le"))
         }
     }
+
+    // ---- Position (chiffrée de bout en bout comme les messages ; l'AAD « pos: » empêche de rejouer un message comme une position) ----
+    /** Une position reçue d'un proche : contenu déchiffré et heure de dépôt sur le serveur. */
+    data class PositionVue(val position: FamillePosition.Position, val majLe: String)
+
+    /** Dépose MA dernière position (texte clair `FamillePosition.versTexte`) pour ce lien : chiffrée sur le téléphone avant l'envoi. */
+    suspend fun deposerPosition(c: Context, lien: Lien, texteClair: String) = withContext(Dispatchers.IO) {
+        val (nonce, chiffre) = FamilleCrypto.chiffrer(cle(c, lien), texteClair, "pos:" + lien.id)
+        appel(c, "PUT", "/liens/${lien.id}/position", JSONObject().put("nonce", nonce).put("chiffre", chiffre)); Unit
+    }
+
+    /** La dernière position de ce proche (null s'il ne partage pas ou plus). */
+    suspend fun positionDe(c: Context, lien: Lien): PositionVue? = withContext(Dispatchers.IO) {
+        val r = appel(c, "GET", "/liens/${lien.id}/position")
+        val p = r.optJSONObject("position") ?: return@withContext null
+        val texte = FamilleCrypto.dechiffrer(cle(c, lien), p.getString("nonce"), p.getString("chiffre"), "pos:" + lien.id) ?: return@withContext null
+        FamillePosition.depuisTexte(texte)?.let { PositionVue(it, p.optString("maj_le")) }
+    }
+
+    /** J'arrête de partager avec ce proche : ma position est effacée du serveur. */
+    suspend fun effacerPosition(c: Context, lienId: String) = withContext(Dispatchers.IO) { appel(c, "DELETE", "/liens/$lienId/position"); Unit }
 }

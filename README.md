@@ -2,6 +2,13 @@
 
 Suivi des **arrivées et départs du personnel de maison** (aide ménagère, gardien, laveur de véhicule, cuisinier(ère), chauffeur…), fiche de chaque personne, sociétés de placement, bilans et évaluations. Tout reste **sur le téléphone, chiffré**.
 
+## Version 1.8 — Ma famille : ajout par NFC et partage de position
+- **Ajout par contact NFC** (deux téléphones avec NFC, dos contre dos) : l'un appuie sur « J'invite », l'autre sur « J'ajoute ». Le code d'invitation passe par NFC, ainsi que l'**empreinte de la clé** de chacun ; si elle concorde avec la clé annoncée par le serveur, le lien est **vérifié automatiquement** des deux côtés (le contact physique remplace la comparaison du numéro de sécurité). Sinon, la vérification manuelle reste nécessaire. Le code reste utilisable à la place du NFC.
+- **Ma position** : domicile (position actuelle + **rayon du périmètre** 50 m à 1 km), autres lieux (École, Travail… avec nom libre), mode « seulement hors du domicile » (par défaut : envoi **chaque minute** tant que la personne est sortie du périmètre, plus une dernière position au retour) ou « en permanence ».
+- **Consentement et visibilité** : la position n'est envoyée qu'aux proches **cochés** dans leur fiche (liens vérifiés), **chiffrée de bout en bout** ; une **notification permanente** signale le partage, avec « Arrêter » ; l'arrêt **efface** la position sur le serveur (elle disparaît aussi après 24 h sans mise à jour).
+- **Fiche d'un proche** : interrupteur « Partager ma position avec lui », sa dernière position (« À la maison », « Hors du périmètre du domicile », « À : École », heure, précision) et « Voir sur la carte ».
+- Serveur : SAWALI lot 380. À venir : rappels de médicaments partagés, photo de caméra partagée, notifications de repas. Le suivi ne redémarre pas seul après un redémarrage du téléphone (à relancer).
+
 ## Version 1.7 — Ma famille (fondations) : liens vérifiés et messagerie chiffrée
 - Nouvel écran **Plus → Ma famille** : créer son compte famille, **inviter** un proche (code à usage unique valable 15 minutes, partageable), **saisir un code** reçu.
 - **Vérification du lien** : chaque lien affiche un **numéro de sécurité** (30 chiffres) calculé à partir des deux clés publiques ; les deux personnes le comparent de vive voix et le confirment. Tant que les DEUX n'ont pas confirmé, la messagerie reste fermée. Un intermédiaire (même le serveur) qui remplacerait une clé changerait le numéro.

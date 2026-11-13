@@ -70,6 +70,9 @@ object FamilleCrypto {
         String(c.doFinal(b64d.decode(chiffreB64)), Charsets.UTF_8)
     } catch (e: Exception) { null }
 
+    /** Empreinte d'une clé publique (SHA-256 en hexadécimal, 64 caractères) : échangée par NFC pour vérifier un lien sans comparer le numéro de sécurité. */
+    fun empreinte(publiqueB64: String): String = MessageDigest.getInstance("SHA-256").digest(b64d.decode(publiqueB64)).joinToString("") { "%02x".format(it) }
+
     /** Numéro de sécurité « 12345 67890 … » (6 groupes de 5 chiffres) : le même des deux côtés si les deux clés publiques sont les bonnes. */
     fun numeroSecurite(publiqueA: String, publiqueB: String): String {
         val (x, y) = triees(publiqueA, publiqueB)
