@@ -2,6 +2,13 @@
 
 Suivi des **arrivées et départs du personnel de maison** (aide ménagère, gardien, laveur de véhicule, cuisinier(ère), chauffeur…), fiche de chaque personne, sociétés de placement, bilans et évaluations. Tout reste **sur le téléphone, chiffré**.
 
+## Version 1.7 — Ma famille (fondations) : liens vérifiés et messagerie chiffrée
+- Nouvel écran **Plus → Ma famille** : créer son compte famille, **inviter** un proche (code à usage unique valable 15 minutes, partageable), **saisir un code** reçu.
+- **Vérification du lien** : chaque lien affiche un **numéro de sécurité** (30 chiffres) calculé à partir des deux clés publiques ; les deux personnes le comparent de vive voix et le confirment. Tant que les DEUX n'ont pas confirmé, la messagerie reste fermée. Un intermédiaire (même le serveur) qui remplacerait une clé changerait le numéro.
+- **Messagerie chiffrée de bout en bout** (courbe P-256 + AES-256-GCM) : le serveur SAWALI ne stocke que du texte chiffré. La clé privée ne quitte jamais le téléphone (préférences chiffrées).
+- Rien de ce qui est dans l'application (personnel, portefeuille, profil) n'est envoyé : seulement le nom choisi, la clé publique et les messages chiffrés.
+- Serveur : SAWALI lot 379 (`/api/famille/…`). À venir : position et périmètre du domicile, rappels de médicaments partagés, photo de caméra partagée, notifications de repas.
+
 ## Version 1.6 — Liste de courses cochable
 - Dans le **détail d'une dépense**, chaque élément se **coche** comme une liste de courses (type Google Keep) : un appui sur la ligne ou la case ; l'élément coché est grisé et barré.
 - **Deux totaux** : le **total de la liste** et le **total des éléments cochés** (avec le nombre d'éléments et le reste à prendre).
