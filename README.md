@@ -2,6 +2,11 @@
 
 Suivi des **arrivées et départs du personnel de maison** (aide ménagère, gardien, laveur de véhicule, cuisinier(ère), chauffeur…), fiche de chaque personne, sociétés de placement, bilans et évaluations. Tout reste **sur le téléphone, chiffré**.
 
+## Version 1.17 — Messagerie permanente : pilule qui clignote et son à l'arrivée d'un message
+- La pastille de la messagerie est redessinée en **pilule « Messages »** (bleue) toujours visible en bas à gauche ; elle devient une **pilule rouge qui clignote** (opacité et taille) avec « N nouveau(x) message(s) » tant qu'il y a des messages non lus.
+- **Bruit à l'arrivée d'un nouveau message** (son de notification du téléphone) quand l'application est ouverte, et **l'en-tête du panneau clignote en orange** ; **pictogramme haut-parleur** dans le panneau pour couper ou rétablir le son (mémorisé). Les anciens messages non lus au démarrage ne sonnent pas ; vos propres messages jamais.
+- **Toujours affichée** : si le serveur est injoignable, la pilule devient grise « Messages · hors ligne » au lieu de disparaître ; le panneau se **réduit** avec la flèche (la discussion est conservée) et se ferme avec la croix. Application fermée : notification du système (veille, toutes les 5 minutes environ).
+
 ## Version 1.16 — Diagnostic de la caméra, barre d'état, messagerie permanente, Aide enrichie
 - **Caméra partagée : diagnostic en direct** (Ma famille → Ma caméra → Diagnostic) : service démarré, autorisation de la caméra, proches cochés, mode, dernier tour, **étape en cours** (« personne ne regarde », « prise de la photo », « envoi chiffré »…), **dernière erreur avec sa cause** (caméra utilisée par une autre application, désactivée par le système, délai dépassé, envoi refusé…), nombre d'images envoyées. Bouton **Tester la caméra (sans envoi)** : prend une photo ici et l'affiche, pour séparer un problème de caméra d'un problème de réseau. Côté spectateur : signal « je regarde » envoyé, réponse du serveur, et ce que doit vérifier l'autre téléphone. Le démarrage refusé par le système est maintenant signalé au lieu de planter.
 - **Barre d'état dans toutes les barres de titre** : **date/heure** et **niveau de batterie** (⚡ en charge, orange à 15 % ou moins), relus toutes les 15 secondes.

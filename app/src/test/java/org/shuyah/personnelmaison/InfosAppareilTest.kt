@@ -17,4 +17,12 @@ class InfosAppareilTest {
         assertEquals("🔋 ?", InfosAppareil.libelleBatterie(null, false))
         assertTrue(InfosAppareil.batterieFaible(15, false)); assertFalse(InfosAppareil.batterieFaible(15, true)); assertFalse(InfosAppareil.batterieFaible(40, false)); assertFalse(InfosAppareil.batterieFaible(null, false))
     }
+
+    @Test fun arriveeDeMessagesDansLeChat() {
+        val recus = listOf(10L to false, 11L to true, 12L to false)                                     // (numéro, envoyé par moi ?)
+        assertEquals(0, ChatLogique.arrivees(null, recus))                                              // première lecture : référence posée, aucun bruit
+        assertEquals(2, ChatLogique.arrivees(9L, recus)); assertEquals(1, ChatLogique.arrivees(10L, recus)); assertEquals(0, ChatLogique.arrivees(12L, recus))
+        assertEquals(0, ChatLogique.arrivees(10L, listOf(11L to true)))                                 // mes propres messages ne sonnent jamais
+        assertEquals(12L, ChatLogique.plusGrand(null, recus)); assertEquals(20L, ChatLogique.plusGrand(20L, recus)); assertNull(ChatLogique.plusGrand(null, emptyList()))
+    }
 }

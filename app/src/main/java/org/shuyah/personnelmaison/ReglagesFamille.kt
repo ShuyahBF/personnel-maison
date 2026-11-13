@@ -74,4 +74,8 @@ object ReglagesFamille {
     /** Liens déjà vus par la veille (null tant qu'elle n'a pas tourné) : un lien absent de cette liste vient d'être créé par un proche. */
     fun liensVus(c: Context): Set<String>? = if (p(c).contains("liens_vus")) p(c).getStringSet("liens_vus", emptySet()) else null
     fun liensVus(c: Context, v: Set<String>) = p(c).edit().putStringSet("liens_vus", v).apply()
+
+    /** Bruit à l'arrivée d'un message dans la messagerie permanente (activé par défaut). */
+    fun sonChat(c: Context) = p(c).getBoolean("son_chat", true)
+    fun sonChat(c: Context, v: Boolean) = p(c).edit().putBoolean("son_chat", v).apply()
 }
