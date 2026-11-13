@@ -417,6 +417,7 @@ fun EcranPlus(ouvrir: (Ecran) -> Unit) = Page("Plus") {
     GrosBouton(Icons.Filled.Nfc, "Test NFC (cartes vierges)", Bleu, sousTexte = "Écrire, lire, effacer : suivi pas à pas") { ouvrir(Ecran.LaboNfc) }
     GrosBouton(Icons.Filled.Sensors, "Test balises Bluetooth", Vert, sousTexte = "Estimote, iBeacon, Eddystone en direct") { ouvrir(Ecran.Balises) }
     GrosBouton(Icons.Filled.CellTower, "Récepteur de badges", Bleu, sousTexte = "Présence des visiteurs envoyée à SAWALI") { ouvrir(Ecran.Recepteur) }
+    GrosBouton(Icons.Filled.Place, "Où suis-je ?", Vert, sousTexte = "Page du lieu repéré par la balise la plus proche") { ouvrir(Ecran.OuSuisJe) }
     GrosBouton(Icons.Filled.Help, "Aide et à propos", Gris, sousTexte = "Réglages à faire, cochés automatiquement") { ouvrir(Ecran.Aide) }
     GrosBouton(Icons.Filled.AccountCircle, "Mon profil", Orange, sousTexte = "Coordonnées, adresse, position") { ouvrir(Ecran.Profil) }
 }
