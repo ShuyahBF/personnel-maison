@@ -412,6 +412,7 @@ fun EcranPlus(ouvrir: (Ecran) -> Unit) = Page("Plus") {
     GrosBouton(Icons.Filled.BarChart, "Bilans du personnel", Bleu, sousTexte = "Présences, retards, paie du mois") { ouvrir(Ecran.Stats) }
     GrosBouton(Icons.Filled.PieChart, "Statistiques du portefeuille", Vert, sousTexte = "Recettes, dépenses, catégories") { ouvrir(Ecran.BudgetStats) }
     GrosBouton(Icons.Filled.Medication, "Médicaments", Bleu, sousTexte = "Rappels, prises, partage avec la famille") { ouvrir(Ecran.Medicaments) }
+    GrosBouton(Icons.Filled.Restaurant, "Repas", Orange, sousTexte = "Je prends mon repas, repas non pris") { ouvrir(Ecran.Repas) }
     GrosBouton(Icons.Filled.FamilyRestroom, "Ma famille", Rouge, sousTexte = "Proches liés, messagerie chiffrée") { ouvrir(Ecran.Famille) }
     GrosBouton(Icons.Filled.AccountCircle, "Mon profil", Orange, sousTexte = "Coordonnées, adresse, position") { ouvrir(Ecran.Profil) }
 }

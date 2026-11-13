@@ -48,10 +48,19 @@ object SurveillanceFamille {
                 val curE = ReglagesFamille.curseur(c, "evt", lien.id)
                 val nouveaux = ClientFamille.evenements(c, lien, curE)
                 nouveaux.forEach { e ->
-                    val ev = e.texte?.let { RappelsMedicaments.evenementDepuisTexte(it) } ?: return@forEach
-                    val oubli = ev.statut != "pris"
-                    notifier(c, if (oubli) CANAL_ALERTE else CANAL_INFO, if (oubli) NotificationManager.IMPORTANCE_HIGH else NotificationManager.IMPORTANCE_LOW,
-                        (lien.id.hashCode() xor e.seq.toInt()) and 0x7FFFFFFF, if (oubli) "⚠ Médicament non pris" else "Médicament pris", RappelsMedicaments.libelleEvenement(ev.copy(par = lien.nom)))
+                    val id = (lien.id.hashCode() xor e.seq.toInt()) and 0x7FFFFFFF
+                    when (e.type) {
+                        "medicament" -> e.texte?.let { RappelsMedicaments.evenementDepuisTexte(it) }?.let { ev ->
+                            val oubli = ev.statut != "pris"
+                            notifier(c, if (oubli) CANAL_ALERTE else CANAL_INFO, if (oubli) NotificationManager.IMPORTANCE_HIGH else NotificationManager.IMPORTANCE_LOW, id,
+                                if (oubli) "⚠ Médicament non pris" else "Médicament pris", RappelsMedicaments.libelleEvenement(ev.copy(par = lien.nom)))
+                        }
+                        "repas" -> e.texte?.let { RappelsRepas.evenementDepuisTexte(it) }?.let { ev ->
+                            val manque = ev.statut == "pas_pris"
+                            notifier(c, if (manque) CANAL_ALERTE else CANAL_INFO, if (manque) NotificationManager.IMPORTANCE_HIGH else NotificationManager.IMPORTANCE_LOW, id,
+                                if (manque) "⚠ Repas non pris" else "Repas", RappelsRepas.libelleEvenement(ev.copy(par = lien.nom)))
+                        }
+                    }
                 }
                 if (nouveaux.isNotEmpty()) ReglagesFamille.curseur(c, "evt", lien.id, nouveaux.maxOf { it.seq })
                 // Messages

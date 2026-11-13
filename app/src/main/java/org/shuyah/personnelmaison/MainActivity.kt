@@ -30,6 +30,7 @@ sealed class Ecran {
     object Plus : Ecran()
     object Famille : Ecran()
     object Medicaments : Ecran()
+    object Repas : Ecran()
     data class FormMedicament(val id: Long?) : Ecran()
     data class FamilleLien(val id: String) : Ecran()
     object BudgetStats : Ecran()
@@ -53,6 +54,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(b)
         Presence.demarrer(lifecycleScope)
         PlanificateurMedicaments.planifierTout(this)          // rappels de médicaments : alarmes remises à jour à chaque ouverture
+        PlanificateurRepas.planifierTout(this)                // rappels de repas : alarmes remises à jour à chaque ouverture
         SurveillanceFamille.programmer(this)                  // veille des proches (médicaments oubliés, messages)
         setContent { MaterialTheme { Racine() } }
     }
@@ -97,6 +99,7 @@ private fun Racine() {
                 Ecran.BudgetStats -> EcranBudgetStats(::retour)
                 Ecran.Famille -> EcranFamille(::ouvrir, ::retour)
                 Ecran.Medicaments -> EcranMedicaments(::ouvrir, ::retour)
+                Ecran.Repas -> EcranRepas(::retour)
                 is Ecran.FormMedicament -> EcranFormMedicament(courant.id, ::retour)
                 is Ecran.FamilleLien -> EcranLienFamille(courant.id, ::retour)
                 is Ecran.FicheOperation -> EcranFicheOperation(courant.id, ::ouvrir, ::retour)

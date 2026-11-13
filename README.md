@@ -2,6 +2,12 @@
 
 Suivi des **arrivées et départs du personnel de maison** (aide ménagère, gardien, laveur de véhicule, cuisinier(ère), chauffeur…), fiche de chaque personne, sociétés de placement, bilans et évaluations. Tout reste **sur le téléphone, chiffré**.
 
+## Version 1.11 — Ma famille : repas partagés et repas non pris
+- Nouvel écran **Plus → Repas** : petit-déjeuner, déjeuner, dîner (et collation, désactivée par défaut) avec leur **heure** réglable et un interrupteur chacun. Les repas d'aujourd'hui affichent leur état (à venir, à déclarer, en train de manger, terminé, non déclaré) et les boutons **Je mange** et **Terminé**.
+- **Rappel à l'heure du repas** avec le bouton « Je prends mon repas » ; **si le repas n'est pas déclaré 60 minutes plus tard**, les proches choisis reçoivent « Awa n'a pas encore pris son déjeuner ».
+- **Partage** : « Je prends mon repas », « Repas terminé » et « repas non pris » sont envoyés, **chiffrés de bout en bout**, aux seuls proches cochés (Ma famille → le proche → « Partager mes repas »). La fiche d'un proche affiche ses derniers événements de repas.
+- **Veille des proches** : « Awa prend son déjeuner » (notification discrète) et « ⚠ Repas non pris » (alerte). Serveur : événements chiffrés de type « repas » (lot 381, aucun changement côté serveur).
+
 ## Version 1.10 — Ma famille : caméra partagée
 - **Ma caméra** (Plus → Ma famille) : caméra **avant ou arrière**, **une photo toutes les 10 / 15 / 30 / 60 secondes**, mode « **seulement quand un proche regarde** » (par défaut : aucune image ne part tant que personne ne regarde, ce qui économise les données mobiles) ou « en continu ». Démarrage et arrêt par un bouton ; une **notification permanente** (« Arrêter la caméra ») indique que la caméra est partagée.
 - **Fiche d'un proche** : interrupteur « Partager ma caméra avec lui » et bouton **Voir la caméra de X** : tant qu'il est actif, le signal « je regarde » est renouvelé toutes les 20 secondes et l'image est relue toutes les 5 secondes (avec son âge).

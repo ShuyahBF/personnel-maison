@@ -188,6 +188,7 @@ fun EcranLienFamille(lienId: String, retour: () -> Unit) = Page("Ma famille", re
     }
     if (l.verifie) CartePositionProche(l)
     if (l.verifie) CarteMedicamentsProche(l)
+    if (l.verifie) CarteRepasProche(l)
     if (l.verifie) CarteCameraProche(l)
     if (erreur.isNotBlank()) Text(erreur, color = Rouge, fontSize = 13.sp)
     GrosBouton(Icons.Filled.LinkOff, "Rompre le lien", Rouge) { rupture = true }

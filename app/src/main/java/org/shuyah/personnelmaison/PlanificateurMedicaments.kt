@@ -35,7 +35,7 @@ object PlanificateurMedicaments {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
 
     /** Alarme à l'heure voulue ; exacte si le système l'autorise, sinon approximative (à quelques minutes près). */
-    private fun alarme(c: Context, quand: Long, pi: PendingIntent) {
+    internal fun alarme(c: Context, quand: Long, pi: PendingIntent) {
         val am = c.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         try {
             if (Build.VERSION.SDK_INT < 31 || am.canScheduleExactAlarms()) am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, quand, pi) else am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, quand, pi)
@@ -138,7 +138,7 @@ class RecepteurMedicament : BroadcastReceiver() {
                             PlanificateurMedicaments.signaler(c, m, p, "oublie")
                         }
                     }
-                    Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED -> { PlanificateurMedicaments.planifierTout(c); SurveillanceFamille.programmer(c) }
+                    Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED -> { PlanificateurMedicaments.planifierTout(c); PlanificateurRepas.planifierTout(c); SurveillanceFamille.programmer(c) }
                 }
             } catch (e: Exception) { /* un rappel raté ne doit jamais faire tomber l'application */ }
             finally { attente.finish() }

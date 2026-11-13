@@ -57,4 +57,17 @@ object ReglagesFamille {
     /** Partage de la caméra démarré (service en cours). */
     fun cameraActive(c: Context) = p(c).getBoolean("camera_active", false)
     fun cameraActive(c: Context, v: Boolean) = p(c).edit().putBoolean("camera_active", v).apply()
+
+    // ---- Repas partagés ----
+    /** Proches avec qui je partage mes repas (début, fin, repas non pris). */
+    fun partageRepasAvec(c: Context): Set<String> = p(c).getStringSet("partage_repas_avec", emptySet()) ?: emptySet()
+    fun partagerRepas(c: Context, lienId: String, oui: Boolean) = p(c).edit().putStringSet("partage_repas_avec", partageRepasAvec(c).toMutableSet().apply { if (oui) add(lienId) else remove(lienId) }).apply()
+    /** Un repas est-il suivi (rappel et alerte) ? Heure prévue en minutes depuis minuit. */
+    fun repasActif(c: Context, code: String) = p(c).getBoolean("repas_actif_$code", RappelsRepas.repas(code)?.actifDefaut ?: false)
+    fun repasActif(c: Context, code: String, v: Boolean) = p(c).edit().putBoolean("repas_actif_$code", v).apply()
+    fun repasMinutes(c: Context, code: String) = p(c).getInt("repas_minutes_$code", RappelsRepas.repas(code)?.minutesDefaut ?: 720)
+    fun repasMinutes(c: Context, code: String, v: Int) = p(c).edit().putInt("repas_minutes_$code", v).apply()
+    /** État du repas pour un jour (AAAA-MM-JJ) : « prend », « termine », « alerte » ou null (rien de déclaré). */
+    fun repasEtat(c: Context, code: String, jour: String): String? = p(c).getString("repas_etat_${code}_$jour", null)
+    fun repasEtat(c: Context, code: String, jour: String, v: String) = p(c).edit().putString("repas_etat_${code}_$jour", v).apply()
 }
