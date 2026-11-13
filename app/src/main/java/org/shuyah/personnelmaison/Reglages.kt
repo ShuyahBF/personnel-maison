@@ -13,4 +13,8 @@ object Reglages {
     /** Minutes de retard tolérées avant de compter un retard (par défaut 10). */
     fun tolerance(c: Context) = p(c).getInt("tolerance", Calculs.TOLERANCE_PAR_DEFAUT)
     fun tolerance(c: Context, v: Int) = p(c).edit().putInt("tolerance", v.coerceIn(0, 120)).apply()
+
+    /** Nom donné à une balise Bluetooth (clé = identifiant de la balise), pour l'écran de test des balises. Vide si aucun. */
+    fun nomBalise(c: Context, cle: String) = p(c).getString("balise_$cle", "") ?: ""
+    fun nomBalise(c: Context, cle: String, nom: String) = p(c).edit().putString("balise_$cle", nom).apply()
 }

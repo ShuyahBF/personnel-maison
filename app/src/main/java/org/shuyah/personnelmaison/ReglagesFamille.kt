@@ -70,4 +70,8 @@ object ReglagesFamille {
     /** État du repas pour un jour (AAAA-MM-JJ) : « prend », « termine », « alerte » ou null (rien de déclaré). */
     fun repasEtat(c: Context, code: String, jour: String): String? = p(c).getString("repas_etat_${code}_$jour", null)
     fun repasEtat(c: Context, code: String, jour: String, v: String) = p(c).edit().putString("repas_etat_${code}_$jour", v).apply()
+
+    /** Liens déjà vus par la veille (null tant qu'elle n'a pas tourné) : un lien absent de cette liste vient d'être créé par un proche. */
+    fun liensVus(c: Context): Set<String>? = if (p(c).contains("liens_vus")) p(c).getStringSet("liens_vus", emptySet()) else null
+    fun liensVus(c: Context, v: Set<String>) = p(c).edit().putStringSet("liens_vus", v).apply()
 }

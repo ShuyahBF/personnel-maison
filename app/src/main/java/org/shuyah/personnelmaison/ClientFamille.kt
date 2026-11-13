@@ -73,7 +73,11 @@ object ClientFamille {
     suspend fun inviter(c: Context): String = withContext(Dispatchers.IO) { appel(c, "POST", "/invitations").getString("code") }
 
     /** Accepte le code reçu d'un proche : crée le lien (à vérifier ensuite). */
-    suspend fun accepter(c: Context, code: String): String = withContext(Dispatchers.IO) { appel(c, "POST", "/invitations/accepter", JSONObject().put("code", code)).getString("lien_id") }
+    suspend fun accepter(c: Context, code: String): String = withContext(Dispatchers.IO) {
+        val id = appel(c, "POST", "/invitations/accepter", JSONObject().put("code", code)).getString("lien_id")
+        ReglagesFamille.liensVus(c)?.let { ReglagesFamille.liensVus(c, it + id) }        // c'est MOI qui ai créé ce lien : pas de notification « à vérifier » pour un lien que je connais déjà
+        id
+    }
 
     /** Mes liens, avec le numéro de sécurité de chacun. */
     suspend fun liens(c: Context): List<Lien> = withContext(Dispatchers.IO) {

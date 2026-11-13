@@ -43,7 +43,12 @@ object SurveillanceFamille {
     suspend fun veiller(c: Context) {
         if (!ClientFamille.inscrit(c)) return
         try {
-            for (lien in ClientFamille.liens(c).filter { it.verifie }) {
+            val tous = ClientFamille.liens(c)
+            // Un proche vient d'accepter une invitation : il faut vérifier le lien (liens jamais vus encore, à vérifier par moi)
+            val vus = ReglagesFamille.liensVus(c)
+            if (vus != null) tous.filter { it.id !in vus && !it.verifieParMoi }.forEach { notifier(c, CANAL_ALERTE, NotificationManager.IMPORTANCE_HIGH, it.id.hashCode() and 0x7FFFFFFF, "Nouveau lien à vérifier", "${it.nom} a accepté votre invitation. Ouvrez Ma famille pour comparer le numéro de sécurité et confirmer.") }
+            ReglagesFamille.liensVus(c, tous.map { it.id }.toSet())
+            for (lien in tous.filter { it.verifie }) {
                 // Événements (médicaments…)
                 val curE = ReglagesFamille.curseur(c, "evt", lien.id)
                 val nouveaux = ClientFamille.evenements(c, lien, curE)
