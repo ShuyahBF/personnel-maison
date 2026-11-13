@@ -24,6 +24,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
@@ -111,15 +112,22 @@ fun EcranFicheOperation(id: Long, ouvrir: (Ecran) -> Unit, retour: () -> Unit) {
             Text("Enregistrée le ${horodatage(op.creeLe)}" + if (op.modifieLe - op.creeLe > 1000) " · corrigée le ${horodatage(op.modifieLe)}" else "", fontSize = 11.sp, color = Gris, modifier = Modifier.padding(top = 6.dp))
         }
         if (lignes.isNotEmpty()) Carte("Détail", Icons.Filled.ListAlt) {
+            // Version 1.6 : chaque ligne se coche comme une liste de courses (type Google Keep) ; un appui sur la ligne ou la case bascule l'état.
             lignes.forEach { l ->
-                Row(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
-                    Text((if (l.quantite != 1.0) "${trim(l.quantite)} × " else "") + l.libelle, Modifier.weight(1f), fontSize = 14.sp, color = BleuNuit)
-                    Text(Calculs.francs(l.montant), fontSize = 14.sp, textAlign = TextAlign.End)
+                Row(Modifier.fillMaxWidth().clickable { scope.launch { dao.cocherLigneOperation(l.id, !l.coche) } }.padding(vertical = 1.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = l.coche, onCheckedChange = { v -> scope.launch { dao.cocherLigneOperation(l.id, v) } })
+                    Text((if (l.quantite != 1.0) "${trim(l.quantite)} × " else "") + l.libelle, Modifier.weight(1f), fontSize = 14.sp,
+                        color = if (l.coche) Gris else BleuNuit, textDecoration = if (l.coche) TextDecoration.LineThrough else TextDecoration.None)
+                    Text(Calculs.francs(l.montant), fontSize = 14.sp, color = if (l.coche) Gris else BleuNuit, textAlign = TextAlign.End)
                 }
             }
             val somme = CalculsBudget.sommeLignes(lignes)
+            val cochees = CalculsBudget.sommeCochees(lignes)
             HorizontalDivider(Modifier.padding(vertical = 4.dp))
-            Row(Modifier.fillMaxWidth()) { Text("Somme des lignes", Modifier.weight(1f), fontSize = 13.sp, color = Gris); Text(Calculs.francs(somme), fontSize = 13.sp, color = if (somme == op.montant) Vert else Rouge, textAlign = TextAlign.End) }
+            // DEUX TOTAUX : celui de la liste entière et celui des éléments cochés (+ ce qu'il reste à prendre).
+            Row(Modifier.fillMaxWidth()) { Text("Total de la liste (${lignes.size} élément${if (lignes.size > 1) "s" else ""})", Modifier.weight(1f), fontSize = 13.sp, color = Gris); Text(Calculs.francs(somme), fontSize = 13.sp, color = if (somme == op.montant) Vert else Rouge, textAlign = TextAlign.End) }
+            Row(Modifier.fillMaxWidth().padding(top = 2.dp)) { Text("Total des éléments cochés (${lignes.count { it.coche }})", Modifier.weight(1f), fontSize = 13.sp, color = BleuNuit); Text(Calculs.francs(cochees), fontSize = 13.sp, color = BleuNuit, textAlign = TextAlign.End) }
+            Row(Modifier.fillMaxWidth().padding(top = 2.dp)) { Text("Reste à prendre", Modifier.weight(1f), fontSize = 12.sp, color = Gris); Text(Calculs.francs(CalculsBudget.resteACocher(lignes)), fontSize = 12.sp, color = Gris, textAlign = TextAlign.End) }
             if (somme != op.montant) Text("La somme des lignes diffère du montant total (${Calculs.francs(op.montant)}).", fontSize = 12.sp, color = Rouge)
         }
         Carte("Pièces justificatives", Icons.Filled.Receipt) {
@@ -165,7 +173,7 @@ fun Miniature(fichier: String) {
 // ======================= Formulaire d'une opération (avec scan de ticket) =======================
 
 /** Une ligne de détail en cours de saisie. */
-data class LigneEdit(val libelle: String, val quantite: String, val montant: String)
+data class LigneEdit(val libelle: String, val quantite: String, val montant: String, val coche: Boolean = false)
 
 /** Une pièce en cours de saisie : `id` null = nouvelle (pas encore enregistrée). */
 data class PieceEdit(val id: Long?, val fichier: String, val texte: String)
@@ -189,7 +197,7 @@ fun EcranFormOperation(id: Long?, genreInitial: String, scanDirect: Boolean, ret
     LaunchedEffect(id) {
         if (id != null) dao.operation(id)?.let { o ->
             existante = o; genre = o.genre; date = o.date; montant = o.montant.toString(); tiers = o.tiers; categorie = o.categorie; portefeuille = o.portefeuille; note = o.note
-            lignes.addAll(dao.lignesOperationListe(id).map { LigneEdit(it.libelle, if (it.quantite == it.quantite.toLong().toDouble()) it.quantite.toLong().toString() else it.quantite.toString(), it.montant.toString()) })
+            lignes.addAll(dao.lignesOperationListe(id).map { LigneEdit(it.libelle, if (it.quantite == it.quantite.toLong().toDouble()) it.quantite.toLong().toString() else it.quantite.toString(), it.montant.toString(), it.coche) })
             pieces.addAll(dao.piecesOperationListe(id).map { PieceEdit(it.id, it.fichier, it.texte) })
         }
     }
@@ -287,7 +295,7 @@ fun EcranFormOperation(id: Long?, genreInitial: String, scanDirect: Boolean, ret
                         note = note.trim(), creeLe = existante?.creeLe ?: maintenant, modifieLe = maintenant)
                     val oid = if (existante == null) dao.ajouterOperation(op) else { dao.modifierOperation(op); op.id }
                     dao.supprimerLignesOperation(oid)
-                    lignes.filter { it.libelle.isNotBlank() || (it.montant.toLongOrNull() ?: 0) > 0 }.forEach { dao.ajouterLigneOperation(LigneOperation(operationId = oid, libelle = it.libelle.trim(), quantite = it.quantite.toDoubleOrNull() ?: 1.0, montant = it.montant.toLongOrNull() ?: 0)) }
+                    lignes.filter { it.libelle.isNotBlank() || (it.montant.toLongOrNull() ?: 0) > 0 }.forEach { dao.ajouterLigneOperation(LigneOperation(operationId = oid, libelle = it.libelle.trim(), quantite = it.quantite.toDoubleOrNull() ?: 1.0, montant = it.montant.toLongOrNull() ?: 0, coche = it.coche)) }
                     pieces.forEach { p -> if (p.id == null) dao.ajouterPieceOperation(PieceOperation(operationId = oid, fichier = p.fichier, texte = p.texte)) else dao.modifierPieceOperation(PieceOperation(p.id, oid, p.fichier, p.texte)) }
                     retirees.forEach { dao.supprimerPieceOperation(it.id!!); Pieces.supprimer(c, it.fichier) }
                     retour()

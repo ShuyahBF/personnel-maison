@@ -67,4 +67,17 @@ class BudgetTest {
         assertEquals(1000L, CalculsBudget.sommeLignes(listOf(LigneOperation(1, 1, "a", 1.0, 400), LigneOperation(2, 1, "b", 1.0, 600))))
         assertTrue(CalculsBudget.bilanTexte(YearMonth.of(2026, 11), ops).contains("Solde : 175 000 FCFA"))
     }
+
+    /** Version 1.6 : liste de courses cochable — deux totaux (liste / cochés) et le reste à prendre. */
+    @Test fun listeDeCoursesCochable() {
+        val l = listOf(
+            LigneOperation(1, 1, "Riz", 1.0, 4500, coche = true),
+            LigneOperation(2, 1, "Lait", 2.0, 2400),
+            LigneOperation(3, 1, "Savon", 1.0, 350, coche = true))
+        assertEquals(7250L, CalculsBudget.sommeLignes(l))      // total de la liste
+        assertEquals(4850L, CalculsBudget.sommeCochees(l))     // total des éléments cochés
+        assertEquals(2400L, CalculsBudget.resteACocher(l))     // reste à prendre
+        assertEquals(0L, CalculsBudget.sommeCochees(emptyList()))
+        assertFalse(LigneOperation(4, 1, "Pain", 1.0, 250).coche)   // décochée par défaut
+    }
 }

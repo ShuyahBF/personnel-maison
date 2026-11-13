@@ -193,7 +193,9 @@ data class LigneOperation(
     val operationId: Long,
     val libelle: String,
     val quantite: Double = 1.0,
-    val montant: Long
+    val montant: Long,
+    /** Version 1.6 : ligne cochée (« dans le panier ») comme une liste de courses ; la liste a ainsi deux totaux (liste / cochés). */
+    @androidx.room.ColumnInfo(defaultValue = "0") val coche: Boolean = false
 )
 
 /** Pièce justificative d'une opération : photo CHIFFRÉE du ticket ou de la facture, avec le texte lu par l'OCR (corrigeable). */
@@ -255,6 +257,8 @@ interface DaoMaison {
     @Query("DELETE FROM lignes_operation WHERE operationId = :id") suspend fun supprimerLignesOperation(id: Long)
     @Query("SELECT * FROM lignes_operation WHERE operationId = :id ORDER BY id") fun lignesOperation(id: Long): Flow<List<LigneOperation>>
     @Query("SELECT * FROM lignes_operation WHERE operationId = :id ORDER BY id") suspend fun lignesOperationListe(id: Long): List<LigneOperation>
+    /** Coche ou décoche une ligne de détail (liste de courses). */
+    @Query("UPDATE lignes_operation SET coche = :coche WHERE id = :id") suspend fun cocherLigneOperation(id: Long, coche: Boolean)
     @Query("SELECT * FROM lignes_operation") fun toutesLignesOperation(): Flow<List<LigneOperation>>
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun ajouterPieceOperation(p: PieceOperation): Long
     @Update(onConflict = OnConflictStrategy.ABORT) suspend fun modifierPieceOperation(p: PieceOperation)
@@ -320,7 +324,7 @@ interface DaoMaison {
 /** Résultat de « nombre de pièces par opération » (affiche l'icône de pièce dans la liste). */
 data class NombrePieces(val operationId: Long, val n: Int)
 
-@Database(entities = [Societe::class, Personnel::class, Pointage::class, NotePerso::class, Evaluation::class, JournalPointage::class, HorairePersonnel::class, NumeroTel::class, Paiement::class, Tache::class, DocumentSociete::class, ProfilUtilisateur::class, Operation::class, LigneOperation::class, PieceOperation::class], version = 5, exportSchema = true)
+@Database(entities = [Societe::class, Personnel::class, Pointage::class, NotePerso::class, Evaluation::class, JournalPointage::class, HorairePersonnel::class, NumeroTel::class, Paiement::class, Tache::class, DocumentSociete::class, ProfilUtilisateur::class, Operation::class, LigneOperation::class, PieceOperation::class], version = 6, exportSchema = true)
 abstract class BaseDonnees : RoomDatabase() { abstract fun dao(): DaoMaison }
 
 /**
@@ -378,6 +382,13 @@ val MIGRATION_4_5 = object : androidx.room.migration.Migration(4, 5) {
     }
 }
 
+/** Migration 5 → 6 : lignes de détail cochables (colonne `coche`, décochée par défaut ; les données existantes sont conservées). */
+val MIGRATION_5_6 = object : androidx.room.migration.Migration(5, 6) {
+    override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `lignes_operation` ADD COLUMN `coche` INTEGER NOT NULL DEFAULT 0")
+    }
+}
+
 object Base {
     private var instance: BaseDonnees? = null
 
@@ -395,6 +406,6 @@ object Base {
             prefs.edit().putString("cle_base", cle).apply()
         }
         return Room.databaseBuilder(c, BaseDonnees::class.java, "personnel_maison.db")
-            .openHelperFactory(SupportFactory(SQLiteDatabase.getBytes(cle.toCharArray()))).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build()
+            .openHelperFactory(SupportFactory(SQLiteDatabase.getBytes(cle.toCharArray()))).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6).build()
     }
 }

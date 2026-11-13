@@ -2,6 +2,11 @@
 
 Suivi des **arrivées et départs du personnel de maison** (aide ménagère, gardien, laveur de véhicule, cuisinier(ère), chauffeur…), fiche de chaque personne, sociétés de placement, bilans et évaluations. Tout reste **sur le téléphone, chiffré**.
 
+## Version 1.6 — Liste de courses cochable
+- Dans le **détail d'une dépense**, chaque élément se **coche** comme une liste de courses (type Google Keep) : un appui sur la ligne ou la case ; l'élément coché est grisé et barré.
+- **Deux totaux** : le **total de la liste** et le **total des éléments cochés** (avec le nombre d'éléments et le reste à prendre).
+- La coche est conservée quand on corrige l'opération. Base en version 6, migration automatique (lignes existantes décochées).
+
 ## Version 1.5 — Portefeuille (dépenses et recettes)
 - Nouvel onglet **Portefeuille** : recettes et dépenses du mois, solde, liste par jour, filtres Tout / Dépenses / Recettes.
 - **Scanner un ticket de caisse** : la photo est gardée **chiffrée comme preuve**, le texte est lu par l'OCR (sur le téléphone) et **pré-remplit** marchand, date, montant total et lignes d'articles ; rien n'écrase ce qui est déjà saisi.

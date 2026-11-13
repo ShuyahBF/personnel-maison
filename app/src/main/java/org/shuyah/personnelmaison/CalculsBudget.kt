@@ -45,6 +45,12 @@ object CalculsBudget {
     /** Somme des lignes de détail. */
     fun sommeLignes(lignes: List<LigneOperation>) = lignes.sumOf { it.montant }
 
+    /** Somme des seules lignes COCHÉES (le panier déjà pris / acheté). */
+    fun sommeCochees(lignes: List<LigneOperation>) = lignes.filter { it.coche }.sumOf { it.montant }
+
+    /** Reste à prendre = total de la liste − total des cochés. */
+    fun resteACocher(lignes: List<LigneOperation>) = sommeLignes(lignes) - sommeCochees(lignes)
+
     /** Pourcentage entier d'une part dans un total (0 si total nul). */
     fun pourcent(part: Long, total: Long): Int = if (total <= 0) 0 else (part * 100 / total).toInt()
 
