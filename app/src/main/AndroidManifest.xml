@@ -20,6 +20,9 @@
     <!-- Caméra partagée avec la famille : photo toutes les X secondes, service au premier plan avec notification permanente -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+    <!-- Récepteur de badges (lot 387) : écoute Bluetooth au premier plan et processeur éveillé -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- Rappels de médicaments : alarmes à l'heure exacte (si le système l'autorise) et reprise après le redémarrage du téléphone -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
@@ -48,6 +51,7 @@
         <!-- Suivi de position partagée avec la famille : service au premier plan de type « location » -->
         <service android:name=".ServicePosition" android:exported="false" android:foregroundServiceType="location" />
         <service android:name=".ServiceCamera" android:exported="false" android:foregroundServiceType="camera" />
+        <service android:name=".ServiceRecepteur" android:exported="false" android:foregroundServiceType="connectedDevice" />
         <!-- Ajout d'un proche par NFC : émulation de carte qui répond avec le code d'invitation -->
         <service android:name=".ServiceNfcFamille" android:exported="true" android:permission="android.permission.BIND_NFC_SERVICE">
             <intent-filter><action android:name="android.nfc.cardemulation.action.HOST_APDU_SERVICE" /></intent-filter>
