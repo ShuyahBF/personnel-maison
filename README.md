@@ -2,6 +2,12 @@
 
 Suivi des **arrivées et départs du personnel de maison** (aide ménagère, gardien, laveur de véhicule, cuisinier(ère), chauffeur…), fiche de chaque personne, sociétés de placement, bilans et évaluations. Tout reste **sur le téléphone, chiffré**.
 
+## Version 1.22 — Récepteur de badges (présence par balises, SAWALI lot 387)
+- Nouvel écran **Plus → Récepteur de badges** : ce téléphone, posé et branché dans une pièce, écoute les balises Bluetooth (Estimote, iBeacon, Eddystone-UID) et envoie à SAWALI, toutes les 5 secondes, les badges entendus et leur signal ; SAWALI montre qui est dans quelle zone (Paramètres → « Présence par balises »). Un envoi « à vide » toutes les 30 s indique que le récepteur est vivant.
+- **Service au premier plan** avec notification permanente (bouton Arrêter) ; processeur gardé éveillé. Les autres appareils Bluetooth (téléphones, écouteurs) ne sont **jamais** envoyés.
+- Réglages (adresse du serveur, identifiant `site:récepteur`, clé) donnés par SAWALI à la création du récepteur ; clé gardée dans les préférences chiffrées.
+- Contrat d'échange v1 (le même pour un futur récepteur Windows) : `POST /api/presence-balises/v1/detections`.
+
 ## Version 1.21 — Laboratoire NFC : jauge de progression, temps écoulé et conseils
 - **Jauge de progression** (0 à 100 %) avec l'étape en cours et le **temps écoulé** pendant un test (lecture, écriture, effacement). Durée habituelle : 1 à 3 secondes une fois la carte détectée.
 - **Conseil automatique** : sans carte détectée après 8 s, l'écran explique qu'Android ne détecte qu'une **nouvelle présentation** (éloigner puis reposer la carte, antenne au dos vers le haut, pas d'étui épais) ; au-delà de 20 s en cours d'écriture, il demande de garder la carte immobile.
