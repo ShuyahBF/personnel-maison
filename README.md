@@ -2,6 +2,12 @@
 
 Suivi des **arrivées et départs du personnel de maison** (aide ménagère, gardien, laveur de véhicule, cuisinier(ère), chauffeur…), fiche de chaque personne, sociétés de placement, bilans et évaluations. Tout reste **sur le téléphone, chiffré**.
 
+## Version 1.25 — « Où suis-je ? » (SAWALI lot 388, « Vous êtes ici »)
+- Nouvel écran **Plus → Où suis-je ?** : le téléphone écoute les balises Bluetooth FIXES posées dans les lieux (rayon, couloir, salle), repère la plus proche dont SAWALI connaît le lieu et propose d'ouvrir la **page publique du lieu** (ou l'ouvre automatiquement si on active l'option).
+- Les lieux sont créés dans **SAWALI** par l'administrateur ou le **superviseur** (Paramètres → « Lieux — Vous êtes ici », ou menu « Lieux (balises) ») : nom, texte, liens utiles, identifiant de la balise (visible dans « Test balises Bluetooth »), QR code à imprimer.
+- Anti-rebond de 6 dB entre deux lieux voisins ; une balise inconnue de SAWALI n'est redemandée qu'après 2 minutes ; seule la balise la plus proche est demandée à SAWALI.
+- Sans l'application, le visiteur scanne simplement le QR code collé près de la balise (tous téléphones, rien à installer).
+
 ## Version 1.24 — Test NFC : lien d'ordonnance de test corrigé
 - Le contenu « Ordonnance (lien de test) » écrivait un lien vers `api.sawalismartsystems.com`, où la page des ordonnances n'existe pas. Il pointe maintenant vers le **site** (`https://sawalismartsystems.com/officine/ordonnance/TEST-…`), comme les vraies étiquettes d'ordonnance de SAWALI.
 
