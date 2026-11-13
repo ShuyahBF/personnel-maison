@@ -8,6 +8,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import kotlinx.coroutines.delay
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -31,6 +33,10 @@ fun EcranLaboNfc(retour: () -> Unit) = Page("Test NFC", retour) {
     val journal = remember { mutableStateListOf<Pair<String, LaboNfc.Etape>>() }                // (heure, étape)
     val nfc = remember(actif) { FamilleNfc.etatNfc(c) }
     val formatHeure = remember { SimpleDateFormat("HH:mm:ss", Locale.FRANCE) }
+    // Temps écoulé depuis le démarrage du test (mis à jour deux fois par seconde tant que le test est actif)
+    var debutMs by remember { mutableStateOf(0L) }
+    var ecouleS by remember { mutableStateOf(0) }
+    LaunchedEffect(actif) { while (actif) { ecouleS = ((System.currentTimeMillis() - debutMs) / 1000).toInt(); delay(500) } }
 
     DisposableEffect(Unit) { onDispose { FamilleNfc.activite(c)?.let { LaboNfc.arreter(it) } } }
 
@@ -40,7 +46,7 @@ fun EcranLaboNfc(retour: () -> Unit) = Page("Test NFC", retour) {
 
     fun demarrer() {
         val a = FamilleNfc.activite(c) ?: return
-        journal.clear(); resultat = null; actif = true
+        journal.clear(); resultat = null; actif = true; debutMs = System.currentTimeMillis(); ecouleS = 0
         when (mode) {
             "Lire une carte" -> { ajouter(LaboNfc.Etape("En attente d'une carte", LaboNfc.Etat.EN_COURS, "approchez la carte du dos du téléphone")); LaboNfc.demarrerLecture(a, ajouter) { terminer(null) } }
             "Effacer une carte" -> { ajouter(LaboNfc.Etape("En attente d'une carte", LaboNfc.Etat.EN_COURS, "approchez la carte à effacer")); LaboNfc.demarrerEcriture(a, null, ajouter) { terminer(it) } }
@@ -59,7 +65,13 @@ fun EcranLaboNfc(retour: () -> Unit) = Page("Test NFC", retour) {
             nfc == 0 -> Text("Ce téléphone n'a pas de NFC.", fontSize = 14.sp, color = Gris)
             nfc == 1 -> Text("Le NFC est désactivé : activez-le dans les réglages du téléphone (Plus → Aide et à propos).", fontSize = 14.sp, color = Orange)
             actif -> {
-                Row(verticalAlignment = Alignment.CenterVertically) { CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp); Text("  Test en cours… gardez la carte contre le téléphone.", fontSize = 14.sp, color = BleuNuit) }
+                // Jauge de progression : pourcentage et étape déduits du journal, temps écoulé, conseil si la carte tarde
+                val (pourcent, etape) = LaboNfc.progression(journal.map { it.second })
+                LinearProgressIndicator(progress = { pourcent / 100f }, modifier = Modifier.fillMaxWidth().height(10.dp))
+                Text("$pourcent % · $etape · ${ecouleS} s", fontSize = 14.sp, color = BleuNuit)
+                Text("Durée habituelle : 1 à 3 secondes une fois la carte détectée.", fontSize = 12.sp, color = Gris)
+                if (pourcent == 0 && ecouleS >= 8) Text("Aucune carte détectée depuis $ecouleS s. Si la carte est DÉJÀ contre le téléphone, ÉLOIGNEZ-LA puis REPOSEZ-LA : Android ne détecte qu'une nouvelle présentation. Placez-la au dos du téléphone, vers le haut (antenne NFC), sans étui épais.", fontSize = 13.sp, color = Orange)
+                if (pourcent in 1..79 && ecouleS >= 20) Text("Le test prend plus de temps que prévu : gardez la carte IMMOBILE contre le téléphone. Au-delà d'une minute, appuyez sur « Arrêter » et recommencez.", fontSize = 13.sp, color = Orange)
                 GrosBouton(Icons.Filled.Stop, "Arrêter", Rouge) { FamilleNfc.activite(c)?.let { LaboNfc.arreter(it) }; actif = false; journal.add(formatHeure.format(Date()) to LaboNfc.Etape("Arrêté par l'utilisateur", LaboNfc.Etat.INFO)) }
             }
             else -> {
