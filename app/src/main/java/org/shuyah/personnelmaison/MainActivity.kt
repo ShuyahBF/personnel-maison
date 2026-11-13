@@ -162,6 +162,7 @@ private fun Racine() {
                 is Ecran.FormSociete -> EcranFormSociete(courant.id, ::retour)
                 is Ecran.FormEvaluation -> EcranFormEvaluation(courant.societeId, courant.id, ::retour)
             }
+            ChatPermanent(Modifier.align(androidx.compose.ui.Alignment.BottomStart))      // messagerie des proches : pastille ou panneau, sur tous les écrans
         }
     }
     }
@@ -173,6 +174,8 @@ fun Titre(texte: String, retour: (() -> Unit)? = null, actions: @Composable RowS
     Row(Modifier.fillMaxWidth().background(BleuNuit).padding(horizontal = 12.dp, vertical = 12.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
         if (retour != null) Icon(Icons.Filled.ArrowBack, "Retour", tint = Color.White, modifier = Modifier.size(28.dp).padding(end = 8.dp).clickable { retour() })
         Text(texte, color = Color.White, fontSize = 18.sp, modifier = Modifier.weight(1f))
+        BarreEtat()                                          // date/heure et batterie, dans toutes les barres de titre
+        Spacer(Modifier.width(8.dp))
         actions()
     }
 

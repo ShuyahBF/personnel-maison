@@ -41,12 +41,17 @@ private fun ouvrirReglage(c: Context, i: Intent) {
 
 /** Aide et à propos : version, réglages à faire (cochés quand ils sont en ordre), et ce qu'il faut savoir. */
 @Composable
-fun EcranAide(ouvrir: (Ecran) -> Unit, retour: () -> Unit) = Page("Aide et à propos", retour) {
+fun EcranAide(ouvrir: (Ecran) -> Unit, retour: () -> Unit) {
     val c = LocalContext.current
     var tick by remember { mutableIntStateOf(0) }
+    var rafraichir by remember { mutableIntStateOf(0) }                   // incrémenté par le pictogramme « Rafraîchir » : relit tout, serveur compris
     var proches by remember { mutableStateOf<Int?>(null) }                // nombre de proches liés ET vérifiés (lu sur le serveur), null = pas encore lu
     LaunchedEffect(Unit) { while (true) { tick++; delay(2_000) } }
-    LaunchedEffect(Unit) { if (ClientFamille.inscrit(c)) proches = try { ClientFamille.liens(c).count { it.verifie } } catch (e: ClientFamille.Erreur) { null } }
+    LaunchedEffect(rafraichir) { if (ClientFamille.inscrit(c)) proches = try { ClientFamille.liens(c).count { it.verifie } } catch (e: ClientFamille.Erreur) { null } }
+    Page("Aide et à propos", retour, actions = {
+        // Rafraîchir : relit tous les réglages de cet écran (téléphone et serveur) sans quitter ni relancer l'application
+        Icon(Icons.Filled.Refresh, "Rafraîchir", tint = androidx.compose.ui.graphics.Color.White, modifier = Modifier.size(28.dp).clickable { tick++; rafraichir++ })
+    }) {
 
     val paquet = Uri.parse("package:" + c.packageName)
     val xiaomi = Build.MANUFACTURER.lowercase().let { it.contains("xiaomi") || it.contains("redmi") || it.contains("poco") }
@@ -86,6 +91,7 @@ fun EcranAide(ouvrir: (Ecran) -> Unit, retour: () -> Unit) = Page("Aide et à pr
 
     Carte("Personnel de maison", Icons.Filled.Info) {
         Text(Version.libelle(), fontSize = 14.sp, color = BleuNuit)
+        Text(InfosAppareil.versionAndroid(), fontSize = 14.sp, color = BleuNuit, modifier = Modifier.padding(top = 2.dp))        // version d'Android et modèle de CE terminal
         Text("Suivi du personnel de maison, portefeuille et « Ma famille » (messages, position, médicaments, repas, caméra). Vos données restent sur le téléphone, chiffrées ; ce qui est partagé avec vos proches est chiffré de bout en bout.", fontSize = 12.sp, color = Gris, modifier = Modifier.padding(top = 4.dp))
         Text("$enOrdre réglages sur ${tous.size} en ordre", fontSize = 16.sp, color = if (enOrdre == tous.size) Vert else Orange, modifier = Modifier.padding(top = 8.dp))
     }
@@ -120,4 +126,5 @@ fun EcranAide(ouvrir: (Ecran) -> Unit, retour: () -> Unit) = Page("Aide et à pr
             Text("• $it", fontSize = 13.sp, color = BleuNuit, modifier = Modifier.padding(vertical = 3.dp))
         }
     }
+}
 }

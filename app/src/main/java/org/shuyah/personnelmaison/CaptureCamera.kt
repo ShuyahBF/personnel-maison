@@ -29,9 +29,23 @@ import java.io.ByteArrayOutputStream
 object CaptureCamera {
     private const val IMAGES_A_PASSER = 10
 
+    /** Version simple : la photo, ou null en cas d'échec. */
+    fun photo(c: Context, avant: Boolean, surFin: (ByteArray?) -> Unit) = photoDetaillee(c, avant) { jpeg, _ -> surFin(jpeg) }
+
+    /** Texte clair des codes d'erreur de la caméra Android (pour le diagnostic). */
+    fun raisonErreur(code: Int) = when (code) {
+        CameraDevice.StateCallback.ERROR_CAMERA_IN_USE -> "caméra déjà utilisée par une autre application"
+        CameraDevice.StateCallback.ERROR_MAX_CAMERAS_IN_USE -> "trop de caméras ouvertes en même temps"
+        CameraDevice.StateCallback.ERROR_CAMERA_DISABLED -> "caméra désactivée par le système (règle de sécurité, économiseur, ou accès refusé en arrière-plan)"
+        CameraDevice.StateCallback.ERROR_CAMERA_DEVICE -> "erreur du pilote de la caméra"
+        CameraDevice.StateCallback.ERROR_CAMERA_SERVICE -> "service caméra du téléphone en panne"
+        else -> "erreur inconnue"
+    } + " (code $code)"
+
+    /** La photo ET, en cas d'échec, la RAISON précise (affichée dans le diagnostic de l'écran Ma famille). */
     @SuppressLint("MissingPermission")
     @Suppress("DEPRECATION")
-    fun photo(c: Context, avant: Boolean, surFin: (ByteArray?) -> Unit) {
+    fun photoDetaillee(c: Context, avant: Boolean, surFin: (ByteArray?, String?) -> Unit) {
         val gestionnaire = c.getSystemService(Context.CAMERA_SERVICE) as CameraManager
         val fil = HandlerThread("capture-famille").apply { start() }
         val h = Handler(fil.looper)
@@ -39,23 +53,23 @@ object CaptureCamera {
         var camera: CameraDevice? = null
         var session: CameraCaptureSession? = null
         var lecteur: ImageReader? = null
-        fun finir(jpeg: ByteArray?) {
+        fun finir(jpeg: ByteArray?, raison: String? = null) {
             if (termine) return
             termine = true
             try { session?.close() } catch (e: Exception) {}
             try { camera?.close() } catch (e: Exception) {}
             try { lecteur?.close() } catch (e: Exception) {}
             fil.quitSafely()
-            surFin(jpeg)
+            surFin(jpeg, if (jpeg == null) (raison ?: "échec sans détail") else null)
         }
         try {
             val face = if (avant) CameraCharacteristics.LENS_FACING_FRONT else CameraCharacteristics.LENS_FACING_BACK
             val id = gestionnaire.cameraIdList.firstOrNull { gestionnaire.getCameraCharacteristics(it).get(CameraCharacteristics.LENS_FACING) == face } ?: gestionnaire.cameraIdList.firstOrNull()
-            if (id == null) { finir(null); return }
+            if (id == null) { finir(null, "aucune caméra trouvée sur ce téléphone"); return }
             val caracteristiques = gestionnaire.getCameraCharacteristics(id)
             val tailles = caracteristiques.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)?.getOutputSizes(ImageFormat.YUV_420_888)
             val taille = tailles?.filter { it.width <= 1280 }?.maxByOrNull { it.width * it.height } ?: tailles?.minByOrNull { it.width * it.height }
-            if (taille == null) { finir(null); return }
+            if (taille == null) { finir(null, "aucun format d'image compatible"); return }
             val rotation = caracteristiques.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 90
             val reader = ImageReader.newInstance(taille.width, taille.height, ImageFormat.YUV_420_888, 2).also { lecteur = it }
             var vues = 0
@@ -68,11 +82,11 @@ object CaptureCamera {
                         val nv21 = FamilleImage.versNv21(image.width, image.height, octets(0), p[0].rowStride, octets(1), octets(2), p[1].rowStride, p[1].pixelStride)
                         val flux = ByteArrayOutputStream()
                         YuvImage(nv21, ImageFormat.NV21, image.width, image.height, null).compressToJpeg(Rect(0, 0, image.width, image.height), 85, flux)
-                        finir(reduire(flux.toByteArray(), rotation))
+                        val reduite = reduire(flux.toByteArray(), rotation); finir(reduite, if (reduite == null) "image illisible après compression" else null)
                     }
-                } catch (e: Exception) { finir(null) } finally { try { image.close() } catch (e: Exception) {} }
+                } catch (e: Exception) { finir(null, "conversion de l'image impossible : " + (e.message ?: e.javaClass.simpleName)) } finally { try { image.close() } catch (e: Exception) {} }
             }, h)
-            h.postDelayed({ finir(null) }, 8_000)                                    // délai maximal
+            h.postDelayed({ finir(null, "délai dépassé (8 s) : la caméra n'a fourni aucune image") }, 8_000)                                    // délai maximal
             gestionnaire.openCamera(id, object : CameraDevice.StateCallback() {
                 override fun onOpened(d: CameraDevice) {
                     camera = d
@@ -80,16 +94,16 @@ object CaptureCamera {
                         d.createCaptureSession(listOf(reader.surface), object : CameraCaptureSession.StateCallback() {
                             override fun onConfigured(s: CameraCaptureSession) {
                                 session = s
-                                try { s.setRepeatingRequest(d.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply { addTarget(reader.surface); set(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_AUTO) }.build(), null, h) } catch (e: Exception) { finir(null) }
+                                try { s.setRepeatingRequest(d.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply { addTarget(reader.surface); set(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_AUTO) }.build(), null, h) } catch (e: Exception) { finir(null, "démarrage de la prise d'images impossible : " + (e.message ?: e.javaClass.simpleName)) }
                             }
-                            override fun onConfigureFailed(s: CameraCaptureSession) { finir(null) }
+                            override fun onConfigureFailed(s: CameraCaptureSession) { finir(null, "configuration de la caméra refusée par le téléphone") }
                         }, h)
-                    } catch (e: Exception) { finir(null) }
+                    } catch (e: Exception) { finir(null, "session de caméra impossible : " + (e.message ?: e.javaClass.simpleName)) }
                 }
-                override fun onDisconnected(d: CameraDevice) { d.close(); finir(null) }
-                override fun onError(d: CameraDevice, erreur: Int) { d.close(); finir(null) }
+                override fun onDisconnected(d: CameraDevice) { d.close(); finir(null, "caméra déconnectée (utilisée par une autre application, ou fermée par le système)") }
+                override fun onError(d: CameraDevice, erreur: Int) { d.close(); finir(null, raisonErreur(erreur)) }
             }, h)
-        } catch (e: CameraAccessException) { finir(null) } catch (e: SecurityException) { finir(null) } catch (e: Exception) { finir(null) }
+        } catch (e: CameraAccessException) { finir(null, "accès à la caméra refusé par le système (" + e.message + ")") } catch (e: SecurityException) { finir(null, "autorisation de la caméra refusée") } catch (e: Exception) { finir(null, "caméra inutilisable : " + (e.message ?: e.javaClass.simpleName)) }
     }
 
     /** Redresse la photo (orientation du capteur), la réduit à 640 px de large et la recompresse (qualité 55) : de l'ordre de 30 à 60 Ko. */

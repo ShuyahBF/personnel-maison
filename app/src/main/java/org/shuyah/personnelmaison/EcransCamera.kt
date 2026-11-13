@@ -52,6 +52,45 @@ fun CarteCameraFamille() {
             else demande.launch(if (Build.VERSION.SDK_INT >= 33) arrayOf(Manifest.permission.CAMERA, Manifest.permission.POST_NOTIFICATIONS) else arrayOf(Manifest.permission.CAMERA))
         }
         if (message.isNotBlank()) Text(message, fontSize = 13.sp, color = Gris, modifier = Modifier.padding(top = 4.dp))
+
+        // ---- Diagnostic en direct : pourquoi une image part ou ne part pas ----
+        var tic by remember { mutableIntStateOf(0) }
+        LaunchedEffect(Unit) { while (true) { tic++; delay(1_000) } }
+        val maintenant = remember(tic) { System.currentTimeMillis() }
+        val choisis = remember(tic) { ReglagesFamille.partageCameraAvec(c).size }
+        HorizontalDivider(Modifier.padding(vertical = 8.dp))
+        Text("Diagnostic", fontSize = 15.sp, color = BleuNuit)
+        @Composable fun Ligne(ok: Boolean?, texte: String) = Row(Modifier.padding(vertical = 1.dp)) {
+            Icon(when (ok) { true -> Icons.Filled.CheckCircle; false -> Icons.Filled.Cancel; null -> Icons.Filled.Info }, null, tint = when (ok) { true -> Vert; false -> Rouge; null -> Bleu }, modifier = Modifier.padding(end = 6.dp, top = 1.dp).size(18.dp))
+            Text(texte, fontSize = 12.sp, color = BleuNuit)
+        }
+        Ligne(actif, if (actif) "Service de la caméra démarré" else "Service de la caméra arrêté : appuyez sur « Démarrer la caméra partagée »")
+        Ligne(c.checkSelfPermission(Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED, "Autorisation de la caméra")
+        Ligne(choisis > 0, if (choisis > 0) "$choisis proche(s) coché(s) pour recevoir la caméra" else "Aucun proche coché (fiche du proche → « Partager ma caméra avec lui »)")
+        Ligne(null, "Mode : " + if (siRegarde) "seulement quand un proche regarde" else "en continu")
+        if (EtatCamera.dernierTourMs > 0) Ligne(null, "Dernier tour : il y a ${(maintenant - EtatCamera.dernierTourMs) / 1000} s (un tour toutes les $intervalle s) · ${EtatCamera.tours} tour(s)")
+        Ligne(EtatCamera.erreur?.let { false }, "État : ${EtatCamera.etape}")
+        EtatCamera.erreur?.let { Ligne(false, "Dernière erreur : $it") }
+        Ligne(if (EtatCamera.imagesEnvoyees > 0) true else null, "Images envoyées : ${EtatCamera.imagesEnvoyees}" + if (EtatCamera.dernierEnvoiMs > 0) " (dernière il y a ${(maintenant - EtatCamera.dernierEnvoiMs) / 1000} s, ${EtatCamera.dernierePhotoKo} Ko)" else "")
+
+        // ---- Test local de la caméra : prend une photo ici, sans rien envoyer ----
+        var essai by remember { mutableStateOf("") }
+        var apercu by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
+        var enCours by remember { mutableStateOf(false) }
+        GrosBouton(Icons.Filled.PhotoCamera, if (enCours) "Test en cours…" else "Tester la caméra (sans envoi)", Gris, actif = !enCours) {
+            if (c.checkSelfPermission(Manifest.permission.CAMERA) != android.content.pm.PackageManager.PERMISSION_GRANTED) essai = "Autorisez d'abord la caméra (bouton « Démarrer la caméra partagée »)."
+            else { enCours = true; essai = ""; apercu = null; val t0 = System.currentTimeMillis()
+                CaptureCamera.photoDetaillee(c, avant) { jpeg, raison ->
+                    FamilleNfc.activite(c)?.runOnUiThread {
+                        enCours = false
+                        if (jpeg != null) { apercu = BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size); essai = "✔ Photo prise en ${System.currentTimeMillis() - t0} ms (${jpeg.size / 1024} Ko) : la caméra fonctionne." }
+                        else essai = "✖ Échec : $raison"
+                    }
+                }
+            }
+        }
+        if (essai.isNotBlank()) Text(essai, fontSize = 13.sp, color = if (essai.startsWith("✔")) Vert else Rouge)
+        apercu?.let { Image(it.asImageBitmap(), "Test de la caméra", Modifier.fillMaxWidth().padding(top = 6.dp).clip(RoundedCornerShape(12.dp)), contentScale = ContentScale.FillWidth) }
     }
 }
 
@@ -68,15 +107,17 @@ fun CarteCameraProche(lien: ClientFamille.Lien) {
     var image by remember { mutableStateOf<ClientFamille.ImageVue?>(null) }
     var maintenant by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var erreur by remember { mutableStateOf("") }
+    var dernierSignal by remember { mutableLongStateOf(0L) }          // dernier signal « je regarde » envoyé avec succès
+    var reponse by remember { mutableStateOf("") }                    // ce que le serveur a répondu au dernier tour
 
     // Visionnage : signal « je regarde » toutes les 20 s, image relue toutes les 5 s ; tout s'arrête quand le bouton est relâché ou l'écran quitté
     LaunchedEffect(regarde) {
         if (!regarde) return@LaunchedEffect
-        var dernierSignal = 0L
         while (true) {
             try {
                 if (System.currentTimeMillis() - dernierSignal > 20_000) { ClientFamille.signalerRegard(c, lien.id); dernierSignal = System.currentTimeMillis() }
                 image = ClientFamille.imageDe(c, lien); erreur = ""
+                reponse = if (image == null) "le serveur n'a encore aucune image de ${lien.nom}" else "image reçue"
             } catch (e: ClientFamille.Erreur) { erreur = e.message.orEmpty() }
             maintenant = System.currentTimeMillis(); delay(5_000)
         }
@@ -101,6 +142,9 @@ fun CarteCameraProche(lien: ClientFamille.Lien) {
                 Text("Image ${age?.let { FamillePosition.libelleAge(it, maintenant) } ?: ""}", fontSize = 12.sp, color = Gris)
             } else Text("En attente de l'image… ${lien.nom} doit avoir démarré sa caméra et vous avoir coché ; la première image arrive en quelques secondes.", fontSize = 13.sp, color = Gris, modifier = Modifier.padding(top = 8.dp))
             if (erreur.isNotBlank()) Text(erreur, fontSize = 12.sp, color = Rouge)
+            // Diagnostic du visionnage : ce qui a été fait de ce côté, et ce que doit faire l'autre téléphone
+            Text("Signal « je regarde » envoyé il y a ${if (dernierSignal > 0) ((maintenant - dernierSignal) / 1000).toString() + " s" else "—"} · $reponse", fontSize = 11.sp, color = Gris, modifier = Modifier.padding(top = 4.dp))
+            if (image == null) Text("Si rien n'arrive : sur le téléphone de ${lien.nom}, (1) « Démarrer la caméra partagée » doit être actif, (2) vous devez être coché dans sa fiche « Partager ma caméra avec ${ClientFamille.nom(c).ifBlank { "lui" }} », (3) l'écran « Ma caméra » → Diagnostic dit pourquoi. La première image arrive au plus tard à la fin de son intervalle.", fontSize = 11.sp, color = Gris)
         }
     }
 }
