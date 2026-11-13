@@ -83,6 +83,42 @@ object LaboNfc {
         return pourcent to texte
     }
 
+    /** Ce que l'on sait d'une carte pour la TRIER : vierge, formatée vide, avec des données, verrouillée ou non inscriptible. */
+    enum class GenreCarte(val libelle: String) {
+        VIERGE("VIERGE (non formatée)"), FORMATEE_VIDE("Formatée, VIDE"), AVEC_CONTENU("Contient des données"),
+        VERROUILLEE("Lecture seule (verrouillée)"), NON_INSCRIPTIBLE("Non inscriptible (carte bancaire, transport…)")
+    }
+
+    /** Une carte vue pendant le tri : identifiant, genre, résumé du contenu, famille, nombre de passages et heure du dernier. */
+    data class CarteVue(val id: String, val genre: GenreCarte, val resume: String, val famille: String, val passages: Int, val vueLe: Long)
+
+    /**
+     * Genre d'une carte (logique pure, testée) : `ndefPresent` = la carte est déjà formatée NDEF ; `formatable` = elle peut l'être ; `inscriptible` = non verrouillée ;
+     * `vide` = aucun enregistrement utile (message absent ou « enregistrement vide »).
+     */
+    fun classer(ndefPresent: Boolean, formatable: Boolean, inscriptible: Boolean, vide: Boolean): GenreCarte = when {
+        ndefPresent && !inscriptible -> GenreCarte.VERROUILLEE
+        ndefPresent && vide -> GenreCarte.FORMATEE_VIDE
+        ndefPresent -> GenreCarte.AVEC_CONTENU
+        formatable -> GenreCarte.VIERGE
+        else -> GenreCarte.NON_INSCRIPTIBLE
+    }
+
+    /** Ajoute (ou met à jour) une carte dans la liste de tri : la plus récemment lue passe en tête, son nombre de passages augmente. */
+    fun fusionnerCarte(liste: List<CarteVue>, nouvelle: CarteVue): List<CarteVue> {
+        val avant = liste.firstOrNull { it.id == nouvelle.id }
+        return listOf(nouvelle.copy(passages = (avant?.passages ?: 0) + 1)) + liste.filter { it.id != nouvelle.id }
+    }
+
+    /** Bilan du tri : « 5 cartes · 2 vierges · 2 formatées vides · 1 avec données ». */
+    fun bilanTri(liste: List<CarteVue>): String {
+        if (liste.isEmpty()) return "Aucune carte lue"
+        val n = liste.size
+        val parties = mutableListOf("$n carte${if (n > 1) "s" else ""}")
+        GenreCarte.values().forEach { g -> val k = liste.count { it.genre == g }; if (k > 0) parties += "$k ${g.libelle.substringBefore(" (").lowercase()}" }
+        return parties.joinToString(" · ")
+    }
+
     /** Un enregistrement NDEF résumé : type, taille et début du contenu lisible (« URI https://… », « MIME application/… »). */
     fun resumeEnregistrement(tnf: Short, type: ByteArray, payload: ByteArray): String {
         val t = String(type, Charsets.US_ASCII)
@@ -224,6 +260,25 @@ object LaboNfc {
                 journal(Etape("Écriture", Etat.ECHEC, "interrompue : " + (e.message ?: e.javaClass.simpleName) + " — gardez la carte contre le téléphone et recommencez")); surFin(false)
             }
         }
+    }
+
+    /**
+     * Mode TRI : le lecteur reste ouvert ; à CHAQUE carte posée, `surCarte` reçoit son identifiant, son genre (vierge, formatée vide, avec données…) et un résumé du contenu.
+     * Rien n'est écrit. On pose les cartes l'une après l'autre : l'écran liste le résultat de chacune.
+     */
+    fun demarrerTri(a: Activity, surCarte: (CarteVue) -> Unit, surErreur: () -> Unit) = lecteur(a, { }, surErreur) { tag ->
+        val ndef = Ndef.get(tag); val formatable = NdefFormatable.get(tag)
+        var resume = ""; var vide = true
+        if (ndef != null) try {
+            ndef.connect()
+            val m = ndef.ndefMessage ?: ndef.cachedNdefMessage
+            val utiles = m?.records?.filter { it.tnf != NdefRecord.TNF_EMPTY } ?: emptyList()
+            vide = utiles.isEmpty()
+            resume = if (vide) "aucun contenu" else resumeEnregistrement(utiles[0].tnf, utiles[0].type, utiles[0].payload).take(90)
+        } catch (e: Exception) { resume = "contenu illisible" } finally { try { ndef.close() } catch (e: Exception) {} }
+        val sak = NfcA.get(tag)?.sak?.toInt()
+        val genre = classer(ndef != null, formatable != null, ndef?.isWritable ?: true, vide)
+        surCarte(CarteVue(hex(tag.id), genre, resume, sak?.let { familleDepuisSak(it).substringBefore(" —") } ?: "famille inconnue", 1, System.currentTimeMillis()))
     }
 
     /**
