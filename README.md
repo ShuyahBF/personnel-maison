@@ -2,6 +2,11 @@
 
 Suivi des **arrivées et départs du personnel de maison** (aide ménagère, gardien, laveur de véhicule, cuisinier(ère), chauffeur…), fiche de chaque personne, sociétés de placement, bilans et évaluations. Tout reste **sur le téléphone, chiffré**.
 
+## Version 1.20 — Laboratoire NFC : carte vierge Mifare Classic vérifiée à la présentation suivante
+- Correction : sur une carte VIERGE (ex. Mifare Classic 1K), le test d'écriture affichait « Test échoué » alors que l'écriture avait réussi : Android ne voit la carte comme « NDEF » qu'après le formatage. Maintenant, après « Formatage et écriture », l'écran demande d'**éloigner puis reposer la carte** ; elle est alors **relue et comparée octet par octet** automatiquement (« Test réussi » ou « Test échoué »).
+- Correction (constat du 13/11/2026 sur une Mifare Classic 1K vierge) : le laboratoire démarrait la lecture avec l'option « ignorer le contrôle NDEF », si bien qu'Android ne signalait plus la carte comme formatable (« Cette carte ne prend pas en charge NDEF »). L'option est retirée : la carte vierge est reconnue et formatée.
+- Les cartes déjà formatées (NTAG…) gardent la vérification immédiate.
+
 ## Version 1.19 — Messagerie : le texte tapé reste visible quand le clavier monte
 - Correction : quand le clavier s'ouvrait, le panneau de discussion était écrasé (sa hauteur de 60 % était encore réduite par une marge « clavier » en double) et la zone de saisie n'affichait plus le texte tapé (seul le curseur clignotait). Le panneau garde maintenant **au moins 300 dp de hauteur** (ou toute la place disponible), la marge en double est supprimée, la zone de saisie a une hauteur minimale d'une ligne complète et une couleur de texte explicite.
 
