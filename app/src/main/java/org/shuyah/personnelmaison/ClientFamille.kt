@@ -154,4 +154,30 @@ object ClientFamille {
             EvenementVu(e.getLong("seq"), e.getString("type"), FamilleCrypto.dechiffrer(k, e.getString("nonce"), e.getString("chiffre"), "evt:" + lien.id), e.getString("cree_le"))
         }
     }
+
+    // ---- Caméra partagée : image chiffrée (AAD « img: ») et signal « je regarde » ----
+    /** Une image reçue : JPEG déchiffré et heure de dépôt sur le serveur. */
+    class ImageVue(val jpeg: ByteArray, val majLe: String)
+
+    /** Dépose MA dernière image (JPEG) pour ce lien : chiffrée sur le téléphone avant l'envoi. */
+    suspend fun deposerImage(c: Context, lien: Lien, jpeg: ByteArray) = withContext(Dispatchers.IO) {
+        val (nonce, chiffre) = FamilleCrypto.chiffrer(cle(c, lien), java.util.Base64.getEncoder().encodeToString(jpeg), "img:" + lien.id)
+        appel(c, "PUT", "/liens/${lien.id}/image", JSONObject().put("nonce", nonce).put("chiffre", chiffre)); Unit
+    }
+
+    /** La dernière image de ce proche (null s'il ne partage pas ou plus). */
+    suspend fun imageDe(c: Context, lien: Lien): ImageVue? = withContext(Dispatchers.IO) {
+        val i = appel(c, "GET", "/liens/${lien.id}/image").optJSONObject("image") ?: return@withContext null
+        val texte = FamilleCrypto.dechiffrer(cle(c, lien), i.getString("nonce"), i.getString("chiffre"), "img:" + lien.id) ?: return@withContext null
+        try { ImageVue(java.util.Base64.getDecoder().decode(texte), i.optString("maj_le")) } catch (e: Exception) { null }
+    }
+
+    /** J'arrête de partager ma caméra avec ce proche : mon image est effacée du serveur. */
+    suspend fun effacerImage(c: Context, lienId: String) = withContext(Dispatchers.IO) { appel(c, "DELETE", "/liens/$lienId/image"); Unit }
+
+    /** « Je regarde ta caméra » : à renouveler toutes les ~20 secondes tant que l'écran est ouvert. */
+    suspend fun signalerRegard(c: Context, lienId: String) = withContext(Dispatchers.IO) { appel(c, "PUT", "/liens/$lienId/regard"); Unit }
+
+    /** Ce proche regarde-t-il ma caméra en ce moment ? */
+    suspend fun quelquUnRegarde(c: Context, lienId: String): Boolean = withContext(Dispatchers.IO) { appel(c, "GET", "/liens/$lienId/regard").optBoolean("regarde", false) }
 }

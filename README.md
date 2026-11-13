@@ -2,6 +2,12 @@
 
 Suivi des **arrivées et départs du personnel de maison** (aide ménagère, gardien, laveur de véhicule, cuisinier(ère), chauffeur…), fiche de chaque personne, sociétés de placement, bilans et évaluations. Tout reste **sur le téléphone, chiffré**.
 
+## Version 1.10 — Ma famille : caméra partagée
+- **Ma caméra** (Plus → Ma famille) : caméra **avant ou arrière**, **une photo toutes les 10 / 15 / 30 / 60 secondes**, mode « **seulement quand un proche regarde** » (par défaut : aucune image ne part tant que personne ne regarde, ce qui économise les données mobiles) ou « en continu ». Démarrage et arrêt par un bouton ; une **notification permanente** (« Arrêter la caméra ») indique que la caméra est partagée.
+- **Fiche d'un proche** : interrupteur « Partager ma caméra avec lui » et bouton **Voir la caméra de X** : tant qu'il est actif, le signal « je regarde » est renouvelé toutes les 20 secondes et l'image est relue toutes les 5 secondes (avec son âge).
+- Photos **réduites (640 px de large, 30 à 60 Ko), chiffrées de bout en bout** avant l'envoi, jamais écrites sur le téléphone ; le serveur ne garde que la dernière image (effacée à l'arrêt, au retrait du partage, ou après 10 minutes).
+- Serveur : SAWALI lot 382. À venir : notifications de prise de repas.
+
 ## Version 1.9 — Rappels de médicaments partagés avec la famille
 - Nouvel écran **Plus → Médicaments** : nom (liste + « Autre… »), dose, **heures de prise** (plusieurs par jour), **jours** de la semaine, période facultative, note, traitement actif ou arrêté. Les prises d'aujourd'hui s'affichent avec leur état (à venir, rappel envoyé, pris, oublié) et un bouton **Pris**.
 - **Rappel à l'heure** (alarme du téléphone, exacte si le système l'autorise) avec les boutons **Pris** et **Plus tard** (retour dans 10 minutes). Les alarmes sont reprogrammées à l'ouverture de l'application et au redémarrage du téléphone.

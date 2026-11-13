@@ -89,6 +89,7 @@ fun EcranFamille(ouvrir: (Ecran) -> Unit, retour: () -> Unit) = Page("Ma famille
 
     CarteNfcFamille { id -> ouvrir(Ecran.FamilleLien(id)) }
     CartePositionFamille()
+    CarteCameraFamille()
 
     Carte("Inviter un proche", Icons.Filled.PersonAdd) {
         Text("Un code à usage unique, valable 15 minutes. Donnez-le à votre proche (de vive voix ou par message) : il le saisit dans son application.", fontSize = 13.sp, color = Gris)
@@ -187,6 +188,7 @@ fun EcranLienFamille(lienId: String, retour: () -> Unit) = Page("Ma famille", re
     }
     if (l.verifie) CartePositionProche(l)
     if (l.verifie) CarteMedicamentsProche(l)
+    if (l.verifie) CarteCameraProche(l)
     if (erreur.isNotBlank()) Text(erreur, color = Rouge, fontSize = 13.sp)
     GrosBouton(Icons.Filled.LinkOff, "Rompre le lien", Rouge) { rupture = true }
     if (rupture) Confirmation("Rompre le lien", "Le lien avec ${l.nom} sera supprimé et les messages échangés seront effacés. Continuer ?", {

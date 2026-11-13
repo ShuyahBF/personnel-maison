@@ -40,4 +40,21 @@ object ReglagesFamille {
         return p(c).getLong(cle, 0L)
     }
     fun curseur(c: Context, genre: String, lienId: String, v: Long) = p(c).edit().putLong("curseur_${genre}_$lienId", v).apply()
+
+    // ---- Caméra partagée ----
+    /** Proches avec qui je partage ma caméra. */
+    fun partageCameraAvec(c: Context): Set<String> = p(c).getStringSet("partage_camera_avec", emptySet()) ?: emptySet()
+    fun partagerCamera(c: Context, lienId: String, oui: Boolean) = p(c).edit().putStringSet("partage_camera_avec", partageCameraAvec(c).toMutableSet().apply { if (oui) add(lienId) else remove(lienId) }).apply()
+    /** Caméra avant (vrai) ou arrière (faux, par défaut). */
+    fun cameraAvant(c: Context) = p(c).getBoolean("camera_avant", false)
+    fun cameraAvant(c: Context, v: Boolean) = p(c).edit().putBoolean("camera_avant", v).apply()
+    /** Secondes entre deux photos. */
+    fun cameraIntervalleS(c: Context) = p(c).getInt("camera_intervalle", FamilleImage.INTERVALLE_DEFAUT_S)
+    fun cameraIntervalleS(c: Context, v: Int) = p(c).edit().putInt("camera_intervalle", v).apply()
+    /** Vrai : une photo n'est envoyée que si un proche regarde (économie de données, par défaut) ; faux : en continu. */
+    fun cameraSeulementSiRegarde(c: Context) = p(c).getBoolean("camera_si_regarde", true)
+    fun cameraSeulementSiRegarde(c: Context, v: Boolean) = p(c).edit().putBoolean("camera_si_regarde", v).apply()
+    /** Partage de la caméra démarré (service en cours). */
+    fun cameraActive(c: Context) = p(c).getBoolean("camera_active", false)
+    fun cameraActive(c: Context, v: Boolean) = p(c).edit().putBoolean("camera_active", v).apply()
 }

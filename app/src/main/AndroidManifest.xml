@@ -12,6 +12,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.NFC" />
+    <!-- Caméra partagée avec la famille : photo toutes les X secondes, service au premier plan avec notification permanente -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
     <!-- Rappels de médicaments : alarmes à l'heure exacte (si le système l'autorise) et reprise après le redémarrage du téléphone -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
@@ -25,6 +28,7 @@
         </activity>
         <!-- Suivi de position partagée avec la famille : service au premier plan de type « location » -->
         <service android:name=".ServicePosition" android:exported="false" android:foregroundServiceType="location" />
+        <service android:name=".ServiceCamera" android:exported="false" android:foregroundServiceType="camera" />
         <!-- Ajout d'un proche par NFC : émulation de carte qui répond avec le code d'invitation -->
         <service android:name=".ServiceNfcFamille" android:exported="true" android:permission="android.permission.BIND_NFC_SERVICE">
             <intent-filter><action android:name="android.nfc.cardemulation.action.HOST_APDU_SERVICE" /></intent-filter>
