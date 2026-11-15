@@ -39,6 +39,7 @@ sealed class Ecran {
     object Balises : Ecran()
     object Recepteur : Ecran()   // récepteur de badges (présence par balises, SAWALI lot 387)
     object OuSuisJe : Ecran()    // « Vous êtes ici » : lieu de la balise la plus proche (SAWALI lot 388)
+    object Agenda : Ecran()      // Google Agenda par la passerelle SAWALI (lot 403) : rendez-vous, note vocale
     data class FormMedicament(val id: Long?) : Ecran()
     data class FamilleLien(val id: String) : Ecran()
     object BudgetStats : Ecran()
@@ -153,6 +154,7 @@ private fun Racine() {
                 Ecran.Balises -> EcranBalises(::retour)
                 Ecran.Recepteur -> EcranRecepteur(::retour)
                 Ecran.OuSuisJe -> EcranOuSuisJe(::retour)
+                Ecran.Agenda -> EcranAgenda(::retour)
                 is Ecran.FormMedicament -> EcranFormMedicament(courant.id, ::retour)
                 is Ecran.FamilleLien -> EcranLienFamille(courant.id, ::retour)
                 is Ecran.FicheOperation -> EcranFicheOperation(courant.id, ::ouvrir, ::retour)
