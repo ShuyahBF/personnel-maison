@@ -2,6 +2,10 @@
 
 Suivi des **arrivées et départs du personnel de maison** (aide ménagère, gardien, laveur de véhicule, cuisinier(ère), chauffeur…), fiche de chaque personne, sociétés de placement, bilans et évaluations. Tout reste **sur le téléphone, chiffré**.
 
+## Version 1.27 — Agenda sans réglage et politique de confidentialité propre
+- **Plus → Mon agenda** : plus d'identifiant ni de clé à saisir. L'application génère elle-même un identifiant d'appareil et une clé (gardés chiffrés) ; l'appareil est enregistré par SAWALI à la **demande d'accès** avec le compte Google déclaré, puis l'administrateur accepte.
+- Lien **« Politique de confidentialité de Personnel de maison »** dans l'écran (page propre sur le site de SAWALI).
+
 ## Version 1.26 — Mon agenda (Google Agenda par la passerelle SAWALI, lot 403)
 - Nouvel écran **Plus → Mon agenda** : lier son Google Agenda (demande d'accès avec son compte Google, acceptée par l'administrateur de SAWALI, puis page Google), voir ses **prochains rendez-vous** (colonnes triables), en créer par **note vocale** (« samedi 8h15 rdv chez le dentiste ») ou texte avec **relecture et confirmation** avant création, supprimer, délier.
 - Réglages : identifiant et clé d'un téléphone source (SAWALI → Transactions SMS → Téléphones source), gardés **chiffrés**. Aucun jeton Google sur le téléphone ; chacun ne voit que son propre agenda.

@@ -9,12 +9,13 @@ import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
 /**
- * AGENDA GOOGLE dans Personnel de maison (version 1.26) : le propriétaire du téléphone lie SON agenda, voit ses prochains rendez-vous et en crée,
+ * AGENDA GOOGLE dans Personnel de maison (version 1.27) : le propriétaire du téléphone lie SON agenda, voit ses prochains rendez-vous et en crée,
  * y compris par note vocale (« samedi 8h15 rdv chez le dentiste »).
  *
- * Pour un développeur WinDev : Personnel de maison ne parle JAMAIS à Google. Il appelle la passerelle « Agenda » de SAWALI (lot 403) avec l'identifiant
- * et la clé d'un téléphone source (X-Source / X-Cle) créé dans SAWALI (Transactions SMS → Téléphones source), saisis une fois dans cet écran et gardés CHIFFRÉS : SAWALI sait ainsi de QUEL téléphone vient la demande et ne
- * donne accès qu'à l'agenda lié à CE téléphone. Aucun jeton Google n'est stocké sur le téléphone.
+ * Pour un développeur WinDev : Personnel de maison ne parle JAMAIS à Google. Il appelle la passerelle « Agenda » de SAWALI (lot 403) avec un identifiant et une clé
+ * d'appareil que l'application GÉNÈRE ELLE-MÊME au premier usage (X-Appareil / X-Cle-Appareil), gardés dans les préférences CHIFFRÉES : rien à saisir. SAWALI enregistre
+ * l'appareil à la « demande d'accès » (compte Google déclaré + nom de l'appareil) et ne donne accès qu'à l'agenda lié à CET appareil, une fois la demande acceptée par l'administrateur.
+ * Aucun jeton Google n'est stocké sur le téléphone.
  *
  * Étapes : 1) « demander » l'accès avec son compte Google ; 2) l'administrateur de SAWALI l'accepte ; 3) « lier » (page Google, une seule fois) ;
  * 4) consulter, analyser une note, créer (après relecture et confirmation), supprimer.
@@ -23,11 +24,17 @@ import java.util.concurrent.TimeUnit
 object Agenda {
     const val URL_PAR_DEFAUT = "https://api.sawalismartsystems.com"
 
-    /** Identifiant et clé du téléphone : préférences CHIFFRÉES de l'application (jamais en clair). */
-    fun source(c: Context) = ClientFamille.prefs(c).getString("agenda_source", "") ?: ""
-    fun cle(c: Context) = ClientFamille.prefs(c).getString("agenda_cle", "") ?: ""
-    fun enregistrerReglages(c: Context, source: String, cle: String) = ClientFamille.prefs(c).edit().putString("agenda_source", source.trim()).putString("agenda_cle", cle.trim()).apply()
-    fun configure(source: String, cle: String) = source.trim().length >= 4 && cle.trim().length >= 8
+    /** Identifiant (24 caractères) et clé (32 caractères) aléatoires, lettres et chiffres : générés une seule fois, gardés dans les préférences CHIFFRÉES de l'application. */
+    fun aleatoire(longueur: Int): String {
+        val alphabet = "abcdefghijklmnopqrstuvwxyz0123456789"; val hasard = java.security.SecureRandom()
+        return (1..longueur).map { alphabet[hasard.nextInt(alphabet.length)] }.joinToString("")
+    }
+    private fun appareil(c: Context): Pair<String, String> {
+        val p = ClientFamille.prefs(c)
+        var id = p.getString("agenda_appareil", null); var cle = p.getString("agenda_cle_appareil", null)
+        if (id == null || cle == null) { id = aleatoire(24); cle = aleatoire(32); p.edit().putString("agenda_appareil", id).putString("agenda_cle_appareil", cle).apply() }
+        return Pair(id, cle)
+    }
 
     /** Texte JSON correctement échappé (guillemets, barres obliques inverses, retours à la ligne, caractères de contrôle). */
     fun echapper(s: String): String = buildString {
@@ -54,7 +61,7 @@ object Agenda {
     data class Proposition(val titre: String, val debut: String, val libelle: String, val manque: List<String>, val duree: Int)
 
     fun messageHttp(code: Int) = when (code) {
-        401 -> "identifiant ou clé du téléphone refusés par SAWALI : vérifiez-les dans « Réglages » (la clé n'est montrée qu'une fois par SAWALI)"
+        401 -> "appareil refusé par SAWALI : désinstallez puis réinstallez l'application, ou contactez l'administrateur"
         403 -> "accès à l'agenda pas encore accepté par l'administrateur"
         409 -> "agenda non lié : reliez votre compte Google"
         in 500..599 -> "serveur SAWALI momentanément indisponible"
@@ -62,7 +69,7 @@ object Agenda {
     }
 
     // ---- Corps JSON (logique pure, testée) ----
-    fun corpsDemande(gmail: String) = "{\"gmail\":\"${echapper(gmail.trim())}\"}"
+    fun corpsDemande(gmail: String, nomAppareil: String = "") = "{\"gmail\":\"${echapper(gmail.trim())}\",\"nom\":\"${echapper(nomAppareil.trim().take(80))}\"}"
     fun corpsAnalyse(texte: String) = "{\"texte\":\"${echapper(texte.trim().take(500))}\"}"
     fun corpsCreation(titre: String, debut: String, fin: String) =
         "{\"titre\":\"${echapper(titre.trim().take(200))}\",\"debut\":\"${echapper(debut)}\",\"fin\":\"${echapper(fin)}\"}"
@@ -91,10 +98,9 @@ object Agenda {
 
     // ---- Réseau (bloquant : à appeler hors de l'écran) ----
     fun appeler(c: Context, chemin: String, corps: String = "{}"): Reponse {
-        val source = source(c); val cle = cle(c)
-        if (!configure(source, cle)) return Reponse(401, "{\"detail\":\"Réglez d'abord l'identifiant et la clé du téléphone (Plus → Mon agenda → Réglages).\"}")
+        val (id, cle) = appareil(c)
         return try {
-            val requete = Request.Builder().url(URL_PAR_DEFAUT + "/api/webhook/agenda/" + chemin).header("X-Source", source).header("X-Cle", cle)
+            val requete = Request.Builder().url(URL_PAR_DEFAUT + "/api/webhook/agenda/" + chemin).header("X-Appareil", id).header("X-Cle-Appareil", cle)
                 .post(corps.toRequestBody(JSON)).build()
             http.newCall(requete).execute().use { Reponse(it.code, it.body?.string() ?: "") }
         } catch (e: Exception) { Reponse(503, "{\"detail\":\"réseau indisponible : ${echapper(e.message ?: e.javaClass.simpleName)}\"}") }
