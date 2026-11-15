@@ -43,3 +43,6 @@ Les règles permanentes du propriétaire (commits, version, commentaires, secret
 - Seules les colonnes d'ACTIONS (boutons) et les colonnes sans valeur comparable (case à cocher de sélection, pictogramme seul) ne sont pas triables.
 - Mise en œuvre : SAWALI = `frontend/src/lib/tri.js` (`useTri`, `trierLignes`) et `frontend/src/components/ThTri.jsx` (en-tête triable), tri serveur de Transactions SMS dans `backend/routes/transactions_sms.py` (`trier`) ; e-Kol = `triTableaux.js` ; WinForms = `DataGridView` avec `SortMode = Automatic` ; Android Compose = en-tête cliquable. Même règle sur toute plateforme, existante ou à venir.
 - Cette règle complète la règle 3 « Tableaux » (survol, sélection, nombres à droite).
+
+## Sécurité, authenticité, détournement et bonne foi (règle 21, 15/11/2026)
+- Avant d'implémenter toute fonction : qui peut mentir ou détourner l'usage, que peut-on VRAIMENT prouver ? Ne jamais s'appuyer sur la seule bonne foi de l'utilisateur ; ne lui demander que ce qui sera prouvé (une saisie non vérifiable décourage sans protéger) ; s'appuyer sur ce que le serveur voit lui-même ; limiter les abus (captcha, limites, délais) ; un indicateur de risque aide l'administrateur, il ne décide pas seul. Texte complet : CLAUDE.md de SAWALI (règle 21).
