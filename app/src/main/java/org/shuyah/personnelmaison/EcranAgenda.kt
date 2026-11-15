@@ -66,7 +66,7 @@ fun EcranAgenda(retour: () -> Unit) = Page("Mon agenda", retour) {
             else { evenements = emptyList(); if (annonce) Msg.long(c, "Agenda non lié.") }
         }
     }
-    LaunchedEffect(Unit) { if (Agenda.configure(Agenda.source(c), Agenda.cle(c))) actualiser(false) }
+    LaunchedEffect(Unit) { actualiser(false) }
 
     // Dictée : reconnaissance vocale du téléphone (fenêtre système), texte ajouté à la note
     val dictee = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
@@ -74,23 +74,7 @@ fun EcranAgenda(retour: () -> Unit) = Page("Mon agenda", retour) {
         if (!dit.isNullOrBlank()) { texte = if (texte.isBlank()) dit else "$texte $dit"; Msg.long(c, "Note dictée : relisez-la puis touchez « Comprendre ».") }
     }
 
-    // ---- Réglages du téléphone (identifiant + clé donnés par SAWALI quand on ajoute le téléphone) : bouton Enregistrer actif seulement si modifié
-    var source by remember { mutableStateOf(Agenda.source(c)) }; var cle by remember { mutableStateOf(Agenda.cle(c)) }
-    var sourceEnregistree by remember { mutableStateOf(Agenda.source(c)) }; var cleEnregistree by remember { mutableStateOf(Agenda.cle(c)) }
-    val modifie = source.trim() != sourceEnregistree || cle.trim() != cleEnregistree
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Carte("Réglages du téléphone", Icons.Filled.Settings) {
-            Text("Dans SAWALI (Transactions SMS → Téléphones source), ajoutez ce téléphone : SAWALI donne un identifiant et une clé (montrée une seule fois). Saisissez-les ici.", fontSize = 13.sp, color = Gris)
-            OutlinedTextField(source, { source = it }, label = { Text("Identifiant du téléphone") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(cle, { cle = it }, label = { Text("Clé") }, singleLine = true, visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button({
-                    Agenda.enregistrerReglages(c, source, cle); sourceEnregistree = source.trim(); cleEnregistree = cle.trim()
-                    Msg.long(c, "Réglages enregistrés."); actualiser(true)
-                }, enabled = modifie && Agenda.configure(source, cle)) { Icon(Icons.Filled.Check, null); Spacer(Modifier.width(6.dp)); Text("Enregistrer") }
-                if (modifie) Text("modifié, non enregistré", fontSize = 12.sp, color = Orange)
-            }
-        }
         Carte("Mon agenda Google", Icons.Filled.CalendarMonth) {
             val e = etat
             when {
@@ -106,7 +90,7 @@ fun EcranAgenda(retour: () -> Unit) = Page("Mon agenda", retour) {
                         Button({
                             if (!Agenda.gmailValide(gmail)) { Msg.long(c, "Indiquez l'adresse e-mail de votre compte Google."); return@Button }
                             Msg.court(c, "Envoi de votre demande en cours…")
-                            appel("demander", Agenda.corpsDemande(gmail)) { r -> Msg.long(c, if (r.ok) "Demande envoyée : l'administrateur doit l'accepter." else "Demande impossible : " + r.message()); actualiser(false) }
+                            appel("demander", Agenda.corpsDemande(gmail, "Personnel de maison · " + android.os.Build.MODEL)) { r -> Msg.long(c, if (r.ok) "Demande envoyée : l'administrateur doit l'accepter." else "Demande impossible : " + r.message()); actualiser(false) }
                         }, enabled = !occupe) { Icon(Icons.Filled.Send, null); Spacer(Modifier.width(6.dp)); Text("Demander l'accès") }
                         Text("L'administrateur vérifie votre compte avant que vous puissiez lier votre agenda : vous êtes responsable de l'adresse indiquée.", fontSize = 11.sp, color = Gris)
                     } else {
@@ -132,6 +116,11 @@ fun EcranAgenda(retour: () -> Unit) = Page("Mon agenda", retour) {
                     }
                 }
             }
+        }
+
+        // Politique de confidentialité propre à Personnel de maison (page publique de SAWALI, citée dans la validation Google)
+        TextButton({ c.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://sawalismartsystems.com/privacy/personnel-maison")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }) {
+            Icon(Icons.Filled.PrivacyTip, null); Spacer(Modifier.width(6.dp)); Text("Politique de confidentialité de Personnel de maison")
         }
 
         if (etat?.lie == true) {
