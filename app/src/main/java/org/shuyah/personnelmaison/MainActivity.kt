@@ -58,14 +58,30 @@ sealed class Ecran {
     data class FormEvaluation(val societeId: Long, val id: Long?) : Ecran()
 }
 
-class MainActivity : ComponentActivity() {
+class MainActivity : androidx.fragment.app.FragmentActivity() {
+    // ---- VERROU BIOMÉTRIQUE (« à la connexion ») : l'écran reste vide tant que le téléphone n'a pas reconnu l'utilisateur.
+    // Redemandé après plus d'une minute d'absence. Sans capteur ni verrouillage d'écran : pas de verrou.
+    private var ouvert by mutableStateOf(false)
+    private var derniereSortie = 0L
+    private var verrouEnCours = false
+    private fun verrouiller() {
+        if (verrouEnCours) return
+        if (!Biometrie.verrouPossible(this) || (derniereSortie != 0L && System.currentTimeMillis() - derniereSortie < 60_000)) { ouvert = true; return }
+        verrouEnCours = true; ouvert = false
+        Biometrie.verifier(this, "Ouvrir Personnel de maison", "Posez votre doigt pour continuer",
+            surOk = { verrouEnCours = false; VerrouEcrans.succes(); ouvert = true },
+            surEchec = { message -> verrouEnCours = false; Toast.makeText(this, "L'application est verrouillée : $message", Toast.LENGTH_LONG).show(); finish() })
+    }
+    override fun onStop() { super.onStop(); if (!verrouEnCours) derniereSortie = System.currentTimeMillis() }
+    override fun onStart() { super.onStart(); verrouiller() }
+
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
         Presence.demarrer(lifecycleScope)
         PlanificateurMedicaments.planifierTout(this)          // rappels de médicaments : alarmes remises à jour à chaque ouverture
         PlanificateurRepas.planifierTout(this)                // rappels de repas : alarmes remises à jour à chaque ouverture
         SurveillanceFamille.programmer(this)                  // veille des proches (médicaments oubliés, messages)
-        setContent { MaterialTheme { Racine() } }
+        setContent { MaterialTheme { if (ouvert) Racine() else Box(Modifier.fillMaxSize().background(BleuNuit)) } }
         traiterEtiquette(intent)
     }
 
@@ -134,7 +150,24 @@ private fun Racine() {
     }) { marge ->
         // Bords de l'écran : barre d'état toujours ; barre de navigation du téléphone seulement quand l'onglet du bas n'est pas affiché
         Box(Modifier.fillMaxSize().padding(marge).statusBarsPadding().then(if (pile.isNotEmpty()) Modifier.navigationBarsPadding() else Modifier)) {
-            when (courant) {
+            // ÉCRANS SENSIBLES (budget, famille, documents) : empreinte exigée si le dernier déverrouillage date de plus de 2 minutes
+            val sensible = courant is Ecran.Budget || courant is Ecran.BudgetStats || courant is Ecran.Famille || courant is Ecran.FamilleLien ||
+                courant is Ecran.FicheOperation || courant is Ecran.FormOperation || courant is Ecran.PieceOperation || courant is Ecran.Piece || courant is Ecran.Document
+            var deverrouille by remember { mutableIntStateOf(0) }                      // incrémenté après un déverrouillage : relit l'état
+            val activite = c as? androidx.fragment.app.FragmentActivity
+            val bloque = sensible && deverrouille >= 0 && activite != null && Biometrie.verrouPossible(c) && !VerrouEcrans.recent()
+            val demanderDoigt = {
+                if (activite != null) Biometrie.verifier(activite, "Écran protégé", "Posez votre doigt pour voir ces informations", { VerrouEcrans.succes(); deverrouille++ },
+                    { message -> Toast.makeText(c, message, Toast.LENGTH_SHORT).show() })
+            }
+            if (bloque) {
+                LaunchedEffect(courant) { demanderDoigt() }
+                Column(Modifier.fillMaxSize().background(Fond), verticalArrangement = Arrangement.Center, horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
+                    Text("🖐️ Écran protégé", fontSize = 20.sp, color = BleuNuit)
+                    Button({ demanderDoigt() }, Modifier.padding(top = 12.dp)) { Icon(Icons.Filled.Lock, null); Spacer(Modifier.width(6.dp)); Text("Déverrouiller avec mon empreinte") }
+                    if (pile.isNotEmpty()) OutlinedButton({ retour() }, Modifier.padding(top = 8.dp)) { Icon(Icons.Filled.ArrowBack, null); Spacer(Modifier.width(6.dp)); Text("Retour") }
+                }
+            } else when (courant) {
                 Ecran.Aujourdhui -> EcranAujourdhui(::ouvrir, grosTexte, surGrosTexte)
                 Ecran.Noter -> EcranNoter(::retour)
                 Ecran.Corrections -> EcranCorrections(::ouvrir, ::retour)
