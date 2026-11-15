@@ -11,6 +11,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -43,7 +44,7 @@ fun EcranTele(retour: () -> Unit) = Page("Ma Télé", retour) {
     val c = LocalContext.current
     val portee = rememberCoroutineScope()
     if (!ClientFamille.inscrit(c)) {
-        Carte("Ma télé", Icons.Filled.Tv) {
+        Carte("Ma Télé", Icons.Filled.Tv) {
             Text("Pour projeter des vidéos sur la télé, ce téléphone doit d'abord avoir son compte « Ma famille » (il identifie son détenteur). " +
                 "Ouvrez Plus → Ma famille et créez votre compte, puis revenez ici.", fontSize = 14.sp)
         }
@@ -57,6 +58,12 @@ fun EcranTele(retour: () -> Unit) = Page("Ma Télé", retour) {
     var choisi by remember { mutableStateOf("") }                         // télé choisie pour la télécommande
     var code by remember { mutableStateOf("") }; var nomTele by remember { mutableStateOf("") }
     var lieu by remember { mutableStateOf("") }                           // où se trouve la télé (aide l'administrateur à décider)
+    // Dossier du demandeur (étape 1 : coordonnées + captcha → code par e-mail ; étape 2 : code + demande)
+    var tel by remember { mutableStateOf("") }; var email by remember { mutableStateOf("") }
+    var defi by remember { mutableStateOf<Tele.Defi?>(null) }; var reponseDefi by remember { mutableStateOf("") }
+    var emailEnvoye by remember { mutableStateOf<String?>(null) }; var codeEmail by remember { mutableStateOf("") }
+    var accord by remember { mutableStateOf(false) }                     // consentement à l'envoi des informations de vérification
+    fun nouveauDefi() { portee.launch { val r = withContext(Dispatchers.IO) { Tele.appeler(c, "GET", "/captcha") }; defi = Tele.defi(r); reponseDefi = ""; if (defi == null) MsgTele.long(c, "Image de contrôle indisponible : " + r.message()) } }
     var glisse by remember { mutableStateOf<Float?>(null) }               // position choisie en faisant glisser le curseur (null : il suit la lecture)
     var aRetirer by remember { mutableStateOf<Tele.Ecran?>(null) }
 
@@ -115,14 +122,50 @@ fun EcranTele(retour: () -> Unit) = Page("Ma Télé", retour) {
             when (approbation) {
                 "attente" -> Text("⏳ Demande envoyée : en attente de l'approbation de SAWALI. Touchez « Actualiser » pour voir la réponse.", fontSize = 14.sp, color = Orange)
                 "refuse" -> Text("⛔ Votre demande a été refusée par SAWALI. Vous pouvez en envoyer une nouvelle.", fontSize = 14.sp, color = Rouge)
-                else -> Text("SAWALI doit approuver chaque appareil avant qu'il puisse projeter des vidéos sur une télé, même pour une seule télé. Indiquez où se trouve la télé, puis envoyez la demande.", fontSize = 13.sp)
+                else -> Text("SAWALI doit approuver chaque appareil avant qu'il puisse projeter des vidéos sur une télé, même pour une seule télé. Pour éviter les abus, votre demande est accompagnée de votre téléphone, d'un e-mail vérifié par un code et des détails de cet appareil.", fontSize = 13.sp)
             }
             if (approbation != "attente") {
+                // Étape 1 : coordonnées + captcha (l'image prouve qu'une personne, pas un robot, fait la demande)
                 OutlinedTextField(lieu, { lieu = it.take(120) }, label = { Text("Où est la télé ? (ex. Salon de Mme Awa)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(tel, { tel = it.take(20) }, label = { Text("Votre numéro de téléphone") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone), modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(email, { email = it.trim().take(120); emailEnvoye = null }, label = { Text("Votre e-mail (ex. awa.badini@gmail.com)") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email), modifier = Modifier.fillMaxWidth())
+                LaunchedEffect(Unit) { if (defi == null) nouveauDefi() }
+                defi?.let { d ->
+                    val img = remember(d.jeton) { android.graphics.BitmapFactory.decodeByteArray(d.png, 0, d.png.size)?.asImageBitmap() }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (img != null) androidx.compose.foundation.Image(img, "Image de contrôle : recopiez les lettres", Modifier.height(64.dp).weight(1f))
+                        OutlinedButton({ nouveauDefi() }, enabled = !occupe) { Icon(Icons.Filled.Refresh, null); Spacer(Modifier.width(4.dp)); Text("Autre image") }
+                    }
+                    OutlinedTextField(reponseDefi, { reponseDefi = it.uppercase().take(8) }, label = { Text("Recopiez les lettres de l'image") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(accord, { accord = it })
+                    Text("J'accepte que SAWALI vérifie ma demande avec mon téléphone, mon e-mail, mon adresse IP et les détails de cet appareil.", fontSize = 12.sp)
+                }
+                val pret = Tele.telephoneValide(tel) && Tele.emailValide(email) && lieu.isNotBlank() && reponseDefi.length >= 4 && accord && defi != null
                 Button({
-                    MsgTele.court(c, "Envoi de votre demande en cours…")
-                    appel("POST", "/demander", JSONObject().put("lieu", lieu.trim()).toString()) { r -> MsgTele.long(c, if (r.ok) "Demande envoyée : SAWALI doit l'approuver." else "Demande impossible : " + r.message()); actualiser(false) }
-                }, enabled = !occupe) { Icon(Icons.Filled.Send, null); Spacer(Modifier.width(6.dp)); Text("Demander l'accès") }
+                    MsgTele.court(c, "Envoi du code par e-mail en cours…")
+                    val corps = JSONObject().put("telephone", tel.trim()).put("email", email).put("captcha_jeton", defi!!.jeton).put("captcha_reponse", reponseDefi).toString()
+                    appel("POST", "/verification", corps) { r ->
+                        val masque = Tele.emailMasque(r)
+                        if (r.ok && masque != null) { emailEnvoye = masque; MsgTele.long(c, "Code envoyé à $masque (valable 15 minutes).") }
+                        else { MsgTele.long(c, "Vérification impossible : " + r.message()); nouveauDefi() }          // le captcha est à usage unique : on en prépare un nouveau
+                    }
+                }, enabled = !occupe && pret) { Icon(Icons.Filled.Email, null); Spacer(Modifier.width(6.dp)); Text("Recevoir le code par e-mail") }
+                // Étape 2 : code reçu → envoi de la demande avec les détails du téléphone
+                if (emailEnvoye != null) {
+                    Text("✉️ Un code à 6 chiffres a été envoyé à $emailEnvoye.", fontSize = 13.sp, color = Orange)
+                    OutlinedTextField(codeEmail, { codeEmail = it.filter { ch -> ch.isDigit() }.take(6) }, label = { Text("Code reçu par e-mail") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
+                    Button({
+                        MsgTele.court(c, "Envoi de votre demande en cours…")
+                        val corps = JSONObject().put("lieu", lieu.trim()).put("code_email", codeEmail).put("appareil", Tele.infosAppareil(c)).toString()
+                        appel("POST", "/demander", corps) { r ->
+                            MsgTele.long(c, if (r.ok) "Demande envoyée : SAWALI doit l'approuver." else "Demande impossible : " + r.message())
+                            if (r.ok) { emailEnvoye = null; codeEmail = "" }
+                            actualiser(false)
+                        }
+                    }, enabled = !occupe && Tele.codeEmailValide(codeEmail)) { Icon(Icons.Filled.Send, null); Spacer(Modifier.width(6.dp)); Text("Demander l'accès") }
+                }
             }
             Text("Vous êtes responsable de la télé que vous appairez et des vidéos que vous y projetez.", fontSize = 11.sp, color = Gris)
             OutlinedButton({ actualiser(true) }, enabled = !occupe) { Icon(Icons.Filled.Refresh, null); Spacer(Modifier.width(6.dp)); Text("Actualiser") }

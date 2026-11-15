@@ -41,4 +41,13 @@ class TeleTest {
         assertTrue(r403.approbationRequise); assertEquals("Votre demande est en attente de l'approbation de SAWALI.", r403.message())
         assertFalse(Tele.Reponse(403, "{\"detail\":\"Seul le détenteur\"}").approbationRequise)
     }
+
+    /** Dossier du demandeur : validation des saisies et détection d'émulateur (fonctions pures). */
+    @Test fun saisiesDuDossier() {
+        assertTrue(Tele.telephoneValide("70 12 34 56")); assertTrue(Tele.telephoneValide("+226 70-12-34-56")); assertFalse(Tele.telephoneValide("1234"))
+        assertTrue(Tele.emailValide("awa.badini@gmail.com")); assertFalse(Tele.emailValide("awa@")); assertFalse(Tele.emailValide("pas un email"))
+        assertTrue(Tele.codeEmailValide("123456")); assertFalse(Tele.codeEmailValide("12345")); assertFalse(Tele.codeEmailValide("12a456"))
+        assertTrue(Tele.estEmulateur("google/sdk_gphone64_x86_64/emu64xa", "sdk_gphone64", "sdk_gphone64", "ranchu"))
+        assertFalse(Tele.estEmulateur("samsung/a13nsxx/a13:14", "SM-A135F", "a13nsxx", "mt6765"))
+    }
 }
