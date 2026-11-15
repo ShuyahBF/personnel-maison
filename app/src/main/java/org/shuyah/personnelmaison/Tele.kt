@@ -27,6 +27,8 @@ object Tele {
     data class Reponse(val code: Int, val corps: String) {
         val ok get() = code in 200..299
         val abonnementRequis get() = code == 402
+        /** Refus 403 « approbation_requise » : l'appareil doit d'abord demander l'accès à SAWALI. */
+        val approbationRequise get() = code == 403 && corps.contains("approbation_requise")
         fun message(): String {
             val brut = Regex("\"message\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"").find(corps)?.groupValues?.get(1)
                 ?: Regex("\"detail\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"").find(corps)?.groupValues?.get(1) ?: return messageHttp(code)
@@ -35,14 +37,15 @@ object Tele {
     }
     data class Formule(val id: String, val nom: String, val prix: Int, val jours: Int, val appareils: Int, val postesTv: Int, val description: String)
     data class Abonnement(val actif: Boolean, val role: String, val formule: String, val joursRestants: Int, val titulaire: String, val appareilsCouverts: List<String>,
-                          val appareils: Int, val postesTv: Int, val postesUtilises: Int, val formules: List<Formule>)
+                          val appareils: Int, val postesTv: Int, val postesUtilises: Int, val formules: List<Formule>,
+                          val approbation: String, val approbationRequise: Boolean, val postesEffectifs: Int, val postesEffectifsUtilises: Int)
     data class Ecran(val id: String, val nom: String, val enLigne: Boolean, val lecture: String, val videoId: String, val position: Double, val duree: Double, val erreur: String)
     data class Video(val id: String, val titre: String, val description: String, val octets: Long)
 
     fun messageHttp(code: Int) = when (code) {
         401 -> "ce téléphone n'a pas de compte « Ma famille » : créez-le d'abord dans Ma famille"
         402 -> "abonnement requis"
-        403 -> "seul le détenteur de l'appareil peut faire cela"
+        403 -> "accès refusé (seul le détenteur de l'appareil, et avec l'approbation de SAWALI)"
         404 -> "introuvable (code de télé expiré ? relancez la page /tv sur la télé)"
         409 -> "limite de l'abonnement atteinte"
         503 -> "réseau indisponible"
@@ -64,7 +67,8 @@ object Tele {
         Abonnement(o.optBoolean("actif"), o.optString("role"), o.optString("formule"), o.optInt("jours_restants"), o.optString("titulaire"),
             (0 until (couv?.length() ?: 0)).map { couv!!.getString(it) }, lim?.optInt("appareils") ?: 0, lim?.optInt("postes_tv") ?: 0, o.optInt("postes_utilises"),
             (0 until (f?.length() ?: 0)).map { i -> f!!.getJSONObject(i).let { x -> val l = x.optJSONObject("limites")
-                Formule(x.getString("id"), x.optString("nom"), x.optInt("prix"), x.optInt("duree_jours", 30), l?.optInt("appareils") ?: 1, l?.optInt("postes_tv") ?: 1, x.optString("description")) } })
+                Formule(x.getString("id"), x.optString("nom"), x.optInt("prix"), x.optInt("duree_jours", 30), l?.optInt("appareils") ?: 1, l?.optInt("postes_tv") ?: 1, x.optString("description")) } },
+            o.optString("approbation", "aucune"), o.optBoolean("approbation_requise", true), o.optJSONObject("effectif")?.optInt("postes_tv", 1) ?: 1, o.optJSONObject("effectif")?.optInt("postes_utilises") ?: 0)
     } catch (e: Exception) { null }
 
     fun ecrans(r: Reponse): List<Ecran> = try {

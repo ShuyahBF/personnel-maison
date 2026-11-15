@@ -30,7 +30,8 @@ private object MsgTele {
 /**
  * ÉCRAN « MA TÉLÉ » (Plus → Ma Télé) : lire sur un téléviseur les vidéos proposées par SAWALI, et les piloter depuis ce téléphone.
  *
- *  1. ABONNEMENT : la projection est réservée aux abonnés ; les formules (prix selon le nombre d'appareils du foyer et de postes TV) s'achètent ici (page de paiement).
+ *  0. APPROBATION : SAWALI doit toujours approuver l'appareil (même pour une seule télé) : le détenteur DEMANDE l'accès, l'administrateur l'accepte ou le refuse.
+ *  1. ABONNEMENT : une télé est offerte ; il est nécessaire à partir de 2 télés simultanées ; les formules (prix selon le nombre d'appareils du foyer et de postes TV) s'achètent ici.
  *  2. MES TÉLÉS : on appaire une télé avec le code affiché par sa page /tv ; le nombre de télés dépend de la formule.
  *  3. TÉLÉCOMMANDE : lecture, pause, −10 s, +10 s, curseur de position, arrêt ; la télé renvoie sa position toutes les 2 secondes.
  *  4. VIDÉOS : celles que l'administrateur propose aux familles.
@@ -55,6 +56,7 @@ fun EcranTele(retour: () -> Unit) = Page("Ma Télé", retour) {
     var occupe by remember { mutableStateOf(false) }
     var choisi by remember { mutableStateOf("") }                         // télé choisie pour la télécommande
     var code by remember { mutableStateOf("") }; var nomTele by remember { mutableStateOf("") }
+    var lieu by remember { mutableStateOf("") }                           // où se trouve la télé (aide l'administrateur à décider)
     var glisse by remember { mutableStateOf<Float?>(null) }               // position choisie en faisant glisser le curseur (null : il suit la lecture)
     var aRetirer by remember { mutableStateOf<Tele.Ecran?>(null) }
 
@@ -82,7 +84,7 @@ fun EcranTele(retour: () -> Unit) = Page("Ma Télé", retour) {
                 val a = Tele.abonnement(r)
                 if (a == null) { MsgTele.long(c, "Abonnement illisible : " + r.message()); return@appel }
                 abo = a
-                if (!a.actif) { ecrans = emptyList(); videos = emptyList(); if (annonce) MsgTele.long(c, "Pas d'abonnement actif."); return@appel }
+                if (a.approbation != "accepte") { ecrans = emptyList(); videos = emptyList(); if (annonce) MsgTele.long(c, when (a.approbation) { "attente" -> "Demande en attente de l'approbation de SAWALI."; "refuse" -> "Demande refusée par SAWALI."; else -> "Demandez d'abord l'accès à la télé." }); return@appel }
                 appel("GET", "/ecrans") { re ->
                     ecrans = Tele.ecrans(re)
                     if (choisi.isEmpty() || ecrans.none { it.id == choisi }) choisi = ecrans.firstOrNull()?.id ?: ""
@@ -93,8 +95,8 @@ fun EcranTele(retour: () -> Unit) = Page("Ma Télé", retour) {
     }
     LaunchedEffect(Unit) { actualiser(false) }
     // État de la télé relu toutes les 2 secondes tant que l'écran est ouvert (position, lecture / pause, en ligne)
-    LaunchedEffect(abo?.actif) {
-        while (abo?.actif == true) {
+    LaunchedEffect(abo?.approbation) {
+        while (abo?.approbation == "accepte") {
             delay(2000)
             val r = withContext(Dispatchers.IO) { Tele.appeler(c, "GET", "/ecrans") }
             if (r.ok) ecrans = Tele.ecrans(r)
@@ -107,8 +109,27 @@ fun EcranTele(retour: () -> Unit) = Page("Ma Télé", retour) {
     }
 
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        // ---------------------------------------------------------------- 0. approbation de SAWALI (toujours, même pour une seule télé)
+        val approbation = abo?.approbation
+        if (abo != null && approbation != "accepte") Carte("Demander l'accès à la télé", Icons.Filled.VerifiedUser) {
+            when (approbation) {
+                "attente" -> Text("⏳ Demande envoyée : en attente de l'approbation de SAWALI. Touchez « Actualiser » pour voir la réponse.", fontSize = 14.sp, color = Orange)
+                "refuse" -> Text("⛔ Votre demande a été refusée par SAWALI. Vous pouvez en envoyer une nouvelle.", fontSize = 14.sp, color = Rouge)
+                else -> Text("SAWALI doit approuver chaque appareil avant qu'il puisse projeter des vidéos sur une télé, même pour une seule télé. Indiquez où se trouve la télé, puis envoyez la demande.", fontSize = 13.sp)
+            }
+            if (approbation != "attente") {
+                OutlinedTextField(lieu, { lieu = it.take(120) }, label = { Text("Où est la télé ? (ex. Salon de Mme Awa)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                Button({
+                    MsgTele.court(c, "Envoi de votre demande en cours…")
+                    appel("POST", "/demander", JSONObject().put("lieu", lieu.trim()).toString()) { r -> MsgTele.long(c, if (r.ok) "Demande envoyée : SAWALI doit l'approuver." else "Demande impossible : " + r.message()); actualiser(false) }
+                }, enabled = !occupe) { Icon(Icons.Filled.Send, null); Spacer(Modifier.width(6.dp)); Text("Demander l'accès") }
+            }
+            Text("Vous êtes responsable de la télé que vous appairez et des vidéos que vous y projetez.", fontSize = 11.sp, color = Gris)
+            OutlinedButton({ actualiser(true) }, enabled = !occupe) { Icon(Icons.Filled.Refresh, null); Spacer(Modifier.width(6.dp)); Text("Actualiser") }
+        }
+
         // ---------------------------------------------------------------- 1. abonnement
-        Carte("Abonnement télé", Icons.Filled.WorkspacePremium) {
+        if (approbation == "accepte") Carte("Abonnement télé", Icons.Filled.WorkspacePremium) {
             val a = abo
             when {
                 a == null -> Text("Lecture de l'abonnement…", fontSize = 13.sp)
@@ -118,14 +139,17 @@ fun EcranTele(retour: () -> Unit) = Page("Ma Télé", retour) {
                     if (a.role == "couvert") Text("Vous êtes couvert par l'abonnement de ${a.titulaire}.", fontSize = 13.sp, color = Gris)
                     else if (a.appareilsCouverts.size > 1) Text("Appareils couverts : " + a.appareilsCouverts.joinToString(", "), fontSize = 13.sp, color = Gris)
                 }
-                else -> Text("La projection sur télé est réservée aux abonnés. Le prix dépend du nombre d'appareils du foyer et de postes TV (téléviseurs).", fontSize = 13.sp)
+                else -> {
+                    Text("✅ Accès approuvé par SAWALI : ${a.postesEffectifs} télé(s) offerte(s) (${a.postesEffectifsUtilises} appairée(s)).", fontSize = 14.sp, color = Vert)
+                    Text("Un abonnement est nécessaire à partir de ${a.postesEffectifs + 1} télés simultanées. Le prix dépend du nombre d'appareils du foyer et de postes TV.", fontSize = 13.sp)
+                }
             }
             OutlinedButton({ actualiser(true) }, enabled = !occupe) { Icon(Icons.Filled.Refresh, null); Spacer(Modifier.width(6.dp)); Text("Actualiser") }
         }
 
         // Formules proposées : s'abonner (ou étendre le foyer)
         val formules = abo?.formules.orEmpty()
-        if (formules.isNotEmpty() && abo?.role != "couvert") Carte(if (abo?.actif == true) "Étendre mon foyer" else "S'abonner", Icons.Filled.ShoppingCart) {
+        if (approbation == "accepte" && formules.isNotEmpty() && abo?.role != "couvert") Carte(if (abo?.actif == true) "Étendre mon foyer" else "S'abonner (à partir de 2 télés)", Icons.Filled.ShoppingCart) {
             formules.forEach { f ->
                 Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                     Text(f.nom, fontSize = 15.sp, color = BleuNuit)
@@ -148,7 +172,7 @@ fun EcranTele(retour: () -> Unit) = Page("Ma Télé", retour) {
             }
         }
 
-        if (abo?.actif == true) {
+        if (abo?.approbation == "accepte") {
             // ---------------------------------------------------------------- 2. mes télés
             Carte("Mes télés", Icons.Filled.Tv) {
                 if (ecrans.isEmpty()) Text("Aucune télé appairée.", fontSize = 13.sp, color = Gris)

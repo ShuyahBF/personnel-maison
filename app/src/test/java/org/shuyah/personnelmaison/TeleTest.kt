@@ -34,7 +34,11 @@ class TeleTest {
         // refus d'abonnement : le message lisible (nom et prix de la formule) prime sur le code
         val r402 = Tele.Reponse(402, "{\"detail\":{\"code\":\"abonnement_requis\",\"message\":\"Réservée aux abonnés. Formule « Télé » : 1 000 FCFA.\",\"formule\":null}}")
         assertTrue(r402.abonnementRequis); assertEquals("Réservée aux abonnés. Formule « Télé » : 1 000 FCFA.", r402.message())
-        assertEquals("seul le détenteur de l'appareil peut faire cela", Tele.Reponse(403, "").message())
+        assertEquals("accès refusé (seul le détenteur de l'appareil, et avec l'approbation de SAWALI)", Tele.Reponse(403, "").message())
         assertTrue(Tele.Reponse(200, "{}").ok); assertFalse(Tele.Reponse(409, "").ok)
+        // approbation de SAWALI : le refus 403 « approbation_requise » se distingue d'un autre refus 403, et son message est lisible
+        val r403 = Tele.Reponse(403, "{\"detail\":{\"code\":\"approbation_requise\",\"etat\":\"attente\",\"message\":\"Votre demande est en attente de l'approbation de SAWALI.\"}}")
+        assertTrue(r403.approbationRequise); assertEquals("Votre demande est en attente de l'approbation de SAWALI.", r403.message())
+        assertFalse(Tele.Reponse(403, "{\"detail\":\"Seul le détenteur\"}").approbationRequise)
     }
 }
