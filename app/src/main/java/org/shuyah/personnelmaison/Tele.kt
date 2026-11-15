@@ -39,7 +39,7 @@ object Tele {
     data class Abonnement(val actif: Boolean, val role: String, val formule: String, val joursRestants: Int, val titulaire: String, val appareilsCouverts: List<String>,
                           val appareils: Int, val postesTv: Int, val postesUtilises: Int, val formules: List<Formule>,
                           val approbation: String, val approbationRequise: Boolean, val postesEffectifs: Int, val postesEffectifsUtilises: Int)
-    data class Ecran(val id: String, val nom: String, val enLigne: Boolean, val lecture: String, val videoId: String, val position: Double, val duree: Double, val erreur: String)
+    data class Ecran(val id: String, val nom: String, val enLigne: Boolean, val lecture: String, val videoId: String, val position: Double, val duree: Double, val erreur: String, val deplacee: Boolean = false)
     data class Video(val id: String, val titre: String, val description: String, val octets: Long)
 
     fun messageHttp(code: Int) = when (code) {
@@ -75,7 +75,7 @@ object Tele {
         val t = JSONObject(r.corps).getJSONArray("ecrans")
         (0 until t.length()).map { i -> t.getJSONObject(i).let { x -> val e = x.optJSONObject("etat")
             Ecran(x.getString("id"), x.optString("nom"), x.optBoolean("en_ligne"), e?.optString("lecture") ?: "arret", e?.optString("video_id") ?: "", e?.optDouble("position", 0.0) ?: 0.0,
-                e?.optDouble("duree", 0.0) ?: 0.0, e?.optString("erreur") ?: "") } }
+                e?.optDouble("duree", 0.0) ?: 0.0, e?.optString("erreur") ?: "", x.optBoolean("deplacee")) } }
     } catch (e: Exception) { emptyList() }
 
     fun videos(r: Reponse): List<Video> = try {
