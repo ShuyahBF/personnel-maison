@@ -2,6 +2,10 @@
 
 Suivi des **arrivées et départs du personnel de maison** (aide ménagère, gardien, laveur de véhicule, cuisinier(ère), chauffeur…), fiche de chaque personne, sociétés de placement, bilans et évaluations. Tout reste **sur le téléphone, chiffré**.
 
+## Version 1.26 — Mon agenda (Google Agenda par la passerelle SAWALI, lot 403)
+- Nouvel écran **Plus → Mon agenda** : lier son Google Agenda (demande d'accès avec son compte Google, acceptée par l'administrateur de SAWALI, puis page Google), voir ses **prochains rendez-vous** (colonnes triables), en créer par **note vocale** (« samedi 8h15 rdv chez le dentiste ») ou texte avec **relecture et confirmation** avant création, supprimer, délier.
+- Réglages : identifiant et clé d'un téléphone source (SAWALI → Transactions SMS → Téléphones source), gardés **chiffrés**. Aucun jeton Google sur le téléphone ; chacun ne voit que son propre agenda.
+
 ## Version 1.25 — « Où suis-je ? » (SAWALI lot 388, « Vous êtes ici »)
 - Nouvel écran **Plus → Où suis-je ?** : le téléphone écoute les balises Bluetooth FIXES posées dans les lieux (rayon, couloir, salle), repère la plus proche dont SAWALI connaît le lieu et propose d'ouvrir la **page publique du lieu** (ou l'ouvre automatiquement si on active l'option).
 - Les lieux sont créés dans **SAWALI** par l'administrateur ou le **superviseur** (Paramètres → « Lieux — Vous êtes ici », ou menu « Lieux (balises) ») : nom, texte, liens utiles, identifiant de la balise (visible dans « Test balises Bluetooth »), QR code à imprimer.
