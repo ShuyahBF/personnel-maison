@@ -86,6 +86,32 @@ object Tele {
     /** Adresse de la page de paiement (PawaPay) et numéro du paiement, ou null. */
     fun paiement(r: Reponse): Pair<String, String>? = try { JSONObject(r.corps).let { it.getString("redirect_url") to it.getString("deposit_id") } } catch (e: Exception) { null }
     fun statutAchat(r: Reponse): String = try { JSONObject(r.corps).optString("statut") } catch (e: Exception) { "" }
+    /** Défi anti-robots reçu de SAWALI : jeton signé + image (octets PNG décodés de « data:image/png;base64,… »). */
+    class Defi(val jeton: String, val png: ByteArray)
+    fun defi(r: Reponse): Defi? = try {
+        val o = JSONObject(r.corps)
+        Defi(o.getString("jeton"), android.util.Base64.decode(o.getString("image").substringAfter("base64,"), android.util.Base64.DEFAULT))
+    } catch (e: Exception) { null }
+
+    /** Réponse à la demande de code : adresse masquée où le code a été envoyé (ex. « aw•••@gmail.com »), ou null. */
+    fun emailMasque(r: Reponse): String? = try { JSONObject(r.corps).getString("email_masque") } catch (e: Exception) { null }
+
+    /** Détails du téléphone joints à la demande (aident SAWALI à juger de son authenticité) : jamais d'identifiant personnel (ni IMEI, ni numéro de série). */
+    fun infosAppareil(c: Context): JSONObject {
+        val m = c.resources.displayMetrics
+        return JSONObject().put("marque", android.os.Build.MANUFACTURER).put("modele", android.os.Build.MODEL).put("android", android.os.Build.VERSION.RELEASE)
+            .put("sdk", android.os.Build.VERSION.SDK_INT.toString()).put("langue", java.util.Locale.getDefault().toLanguageTag())
+            .put("fuseau", java.util.TimeZone.getDefault().id).put("ecran", "${m.widthPixels}x${m.heightPixels}")
+            .put("app_version", BuildConfig.VERSION_NAME)
+            .put("emulateur", estEmulateur(android.os.Build.FINGERPRINT, android.os.Build.MODEL, android.os.Build.PRODUCT, android.os.Build.HARDWARE))
+    }
+
+    /** Vrai si les marques techniques du téléphone sont celles d'un émulateur (pure, testable). */
+    fun estEmulateur(empreinte: String, modele: String, produit: String, materiel: String): Boolean {
+        val t = listOf(empreinte, modele, produit, materiel).joinToString(" ").lowercase()
+        return listOf("generic", "emulator", "sdk_gphone", "ranchu", "goldfish", "vbox", "genymotion", "android sdk built for").any { it in t }
+    }
+
     fun idEcran(r: Reponse): String? = try { JSONObject(r.corps).getJSONObject("ecran").getString("id") } catch (e: Exception) { null }
 
     // ------------------------------------------------------------------ fonctions pures (testées sans téléphone)
@@ -94,6 +120,15 @@ object Tele {
 
     /** Un code de télé est exploitable à partir de 4 caractères (la télé en affiche 6). */
     fun codeValide(saisie: String) = codeNormalise(saisie).length in 4..12
+
+    /** Numéro plausible : 8 à 15 chiffres (espaces, points et « + » tolérés). */
+    fun telephoneValide(saisie: String) = saisie.filter { it.isDigit() }.length in 8..15
+
+    /** Adresse e-mail plausible (SAWALI refait la vérification complète). */
+    fun emailValide(saisie: String) = Regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]{2,}$").matches(saisie.trim())
+
+    /** Code reçu par e-mail : exactement 6 chiffres. */
+    fun codeEmailValide(saisie: String) = saisie.trim().length == 6 && saisie.trim().all { it.isDigit() }
 
     /** « 2 appareils · 1 poste TV » : limites d'une formule en clair. */
     fun libelleLimites(appareils: Int, postesTv: Int) =
