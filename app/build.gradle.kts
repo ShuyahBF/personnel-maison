@@ -17,8 +17,8 @@ android {
         minSdk = 26
         targetSdk = 35
         // Règle de version : VERSION +1 à chaque livraison (voir Version.kt).
-        versionCode = 29
-        versionName = "1.28"
+        versionCode = 30
+        versionName = "1.29"
         // Nom du fichier livré : personnel-maison-<version>-debug.apk (copié ensuite en personnel-maison-<version>.apk)
         setProperty("archivesBaseName", "personnel-maison-$versionName")
         // Date et heure de compilation, affichées en bas de l'écran principal.
@@ -55,6 +55,8 @@ dependencies {
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
     // Lecture du texte des pièces d'identité (OCR) : modèle embarqué, fonctionne sans Internet
     implementation("com.google.mlkit:text-recognition:16.0.1")
+    // Empreinte digitale (verrou de l'application et des écrans sensibles)
+    implementation("androidx.biometric:biometric:1.1.0")
     // Signal de présence à SAWALI (règle 4 du propriétaire)
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
