@@ -19,12 +19,14 @@ android {
         // Règle de version : VERSION +1 à chaque livraison (voir Version.kt).
         versionCode = 34
         versionName = "1.33"
-        // Nom du fichier livré : personnel-maison-<version>-debug.apk (copié ensuite en personnel-maison-<version>.apk)
+        // Fichier brut : personnel-maison-<version>-release.apk, livré sous le nom personnel-maison-<version>.apk (sans « debug » ni « release »)
         setProperty("archivesBaseName", "personnel-maison-$versionName")
         // Date et heure de compilation, affichées en bas de l'écran principal.
         buildConfigField("String", "DATE_COMPILATION", "\"" + SimpleDateFormat("dd/MM/yyyy HH:mm").format(Date()) + "\"")
     }
-    buildTypes { release { isMinifyEnabled = false } }
+    // Livraison : l'APK « release » (non débogable) est signé avec la clé locale de l'environnement pour pouvoir s'installer directement ;
+    // il est livré sous le nom personnel-maison-<version>.apk (sans « debug »). Aucune clé de publication n'est dans le dépôt.
+    buildTypes { release { isMinifyEnabled = false; signingConfig = signingConfigs.getByName("debug") } }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
