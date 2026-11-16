@@ -442,21 +442,35 @@ val MIGRATION_6_7 = object : androidx.room.migration.Migration(6, 7) {
 
 object Base {
     private var instance: BaseDonnees? = null
+    const val NOM_FICHIER = "personnel_maison.db"
 
     /** Accès unique à la base (ouverte au premier appel ; synchronisé : appelé depuis plusieurs fils). */
     fun dao(c: Context): DaoMaison = synchronized(this) { (instance ?: ouvrir(c.applicationContext).also { instance = it }).dao() }
 
+    /** Préférences CHIFFRÉES « secrets » (clé de la base, clés de la sauvegarde en ligne). */
+    fun secrets(c: Context): android.content.SharedPreferences = EncryptedSharedPreferences.create(c.applicationContext, "secrets",
+        MasterKey.Builder(c.applicationContext).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build(),
+        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV, EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM)
+
+    /** Rapatrie dans le fichier principal tout ce qui est encore dans le journal (mode WAL) : le fichier de la base est alors complet et peut être copié tel quel. */
+    fun pointDeControle(c: Context) = synchronized(this) {
+        dao(c)                                                                      // ouvre la base si besoin
+        instance!!.openHelper.writableDatabase.query("PRAGMA wal_checkpoint(TRUNCATE)").use { it.moveToFirst() }
+    }
+
+    /** Ferme la base (avant de remplacer son fichier lors d'une restauration) ; elle sera rouverte au prochain accès. */
+    fun fermer() = synchronized(this) { instance?.close(); instance = null }
+
     private fun ouvrir(c: Context): BaseDonnees {
         SQLiteDatabase.loadLibs(c)
-        val prefs = EncryptedSharedPreferences.create(c, "secrets", MasterKey.Builder(c).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build(),
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV, EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM)
+        val prefs = secrets(c)
         var cle = prefs.getString("cle_base", null)
         if (cle == null) {
             val octets = ByteArray(32).also { SecureRandom().nextBytes(it) }
             cle = octets.joinToString("") { "%02x".format(it) }
             prefs.edit().putString("cle_base", cle).apply()
         }
-        return Room.databaseBuilder(c, BaseDonnees::class.java, "personnel_maison.db")
+        return Room.databaseBuilder(c, BaseDonnees::class.java, NOM_FICHIER)
             .openHelperFactory(SupportFactory(SQLiteDatabase.getBytes(cle.toCharArray()))).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7).build()
     }
 }

@@ -17,8 +17,8 @@ android {
         minSdk = 26
         targetSdk = 35
         // Règle de version : VERSION +1 à chaque livraison (voir Version.kt).
-        versionCode = 35
-        versionName = "1.34"
+        versionCode = 36
+        versionName = "1.35"
         // Fichier brut : personnel-maison-<version>-release.apk, livré sous le nom personnel-maison-<version>.apk (sans « debug » ni « release »)
         setProperty("archivesBaseName", "personnel-maison-$versionName")
         // Date et heure de compilation, affichées en bas de l'écran principal.

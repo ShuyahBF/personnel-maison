@@ -70,6 +70,16 @@ object Pieces {
         nom
     }
 
+    /** Noms de tous les fichiers enregistrés (pour la sauvegarde en ligne). */
+    fun noms(c: Context): List<String> = dossier(c).listFiles()?.filter { it.isFile }?.map { it.name } ?: emptyList()
+
+    /** Restauration : réécrit un fichier sous son NOM D'ORIGINE (la base y fait référence), chiffré avec la clé de CE téléphone. */
+    fun ecrireNomme(c: Context, nom: String, octets: ByteArray) {
+        require(!nom.contains('/') && !nom.contains("..")) { "Nom de fichier invalide" }
+        val f = File(dossier(c), nom); if (f.exists()) f.delete()
+        EncryptedFile.Builder(c, f, cle(c), EncryptedFile.FileEncryptionScheme.AES256_GCM_HKDF_4KB).build().openFileOutput().use { it.write(octets) }
+    }
+
     /** Relit et déchiffre un fichier enregistré ; null si absent. */
     suspend fun lireOctets(c: Context, nom: String?): ByteArray? = withContext(Dispatchers.IO) {
         if (nom.isNullOrBlank()) return@withContext null

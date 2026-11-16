@@ -33,10 +33,17 @@ fun EcranAujourdhui(ouvrir: (Ecran) -> Unit, grosTexte: Boolean, surGrosTexte: (
     val horaires = horairesDe(dao, personnels)
     val actifs = personnels.filter { p -> try { !LocalDate.parse(p.dateDebut).isAfter(aujourdhui) && (p.dateFin == null || !LocalDate.parse(p.dateFin).isBefore(aujourdhui)) } catch (e: Exception) { true } }
 
+    // Sauvegarde en ligne : automatique une fois par jour à l'ouverture (si activée) ; toujours annoncée (règle : jamais d'enregistrement silencieux)
+    LaunchedEffect(Unit) {
+        SauvegardeEnLigne.sauvegardeAutomatique(c)?.let { android.widget.Toast.makeText(c.applicationContext, if (it.ok) "Sauvegarde automatique effectuée" else "Sauvegarde automatique impossible : ${it.message}", android.widget.Toast.LENGTH_LONG).show() }
+    }
     Page("Pointage") {
         Text(Calculs.dateLongue(aujourdhui), fontSize = 20.sp, color = BleuNuit)
         GrosBouton(Icons.Filled.AccessTime, "Noter une arrivée ou un départ", Vert) { ouvrir(Ecran.Noter) }
         GrosBouton(Icons.Filled.EditNote, "Corriger un pointage", Bleu) { ouvrir(Ecran.Corrections) }
+        if (SauvegardeEnLigne.mode(c) == null) Carte(modifier = Modifier.clickable { ouvrir(Ecran.Sauvegarde) }) {
+            Text("Protégez vos données : activez la sauvegarde en ligne (ou restaurez-la après une réinstallation).", fontSize = 15.sp, color = Vert)
+        }
         if (profil?.nom.isNullOrBlank()) Carte(modifier = Modifier.clickable { ouvrir(Ecran.Profil) }) {
             Text("Complétez votre profil : nom, téléphone, adresse, position…", fontSize = 15.sp, color = Bleu)
         }
