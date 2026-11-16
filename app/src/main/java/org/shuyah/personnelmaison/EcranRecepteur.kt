@@ -55,8 +55,9 @@ fun EcranRecepteur(retour: () -> Unit) = Page("Récepteur de badges", retour) {
         Champ("Adresse du serveur", adresse, { adresse = it })
         Champ("Identifiant du récepteur (site:récepteur)", identifiant, { identifiant = it })
         OutlinedTextField(cle, { cle = it }, label = { Text("Clé du récepteur") }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
-            visualTransformation = if (voirCle) androidx.compose.ui.text.input.VisualTransformation.None else PasswordVisualTransformation())
-        Text(if (voirCle) "Masquer la clé" else "Afficher la clé", fontSize = 13.sp, color = Bleu, modifier = Modifier.padding(top = 2.dp).clickable { voirCle = !voirCle })
+            visualTransformation = if (voirCle) androidx.compose.ui.text.input.VisualTransformation.None else PasswordVisualTransformation(),
+            // Règle 22 (16/11/2026) : pictogramme œil DANS le champ (remplace le lien texte « Afficher la clé »)
+            trailingIcon = { IconButton({ voirCle = !voirCle }) { Icon(if (voirCle) Icons.Filled.VisibilityOff else Icons.Filled.Visibility, if (voirCle) "Masquer la saisie" else "Afficher la saisie") } })
         Text("SAWALI → Paramètres → « Présence par balises » → créer le site, les zones, puis le récepteur : l'identifiant et la clé s'affichent UNE SEULE FOIS.", fontSize = 12.sp, color = Gris, modifier = Modifier.padding(top = 4.dp))
     }
 
