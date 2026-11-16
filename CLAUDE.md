@@ -46,3 +46,10 @@ Les règles permanentes du propriétaire (commits, version, commentaires, secret
 
 ## Sécurité, authenticité, détournement et bonne foi (règle 21, 15/11/2026)
 - Avant d'implémenter toute fonction : qui peut mentir ou détourner l'usage, que peut-on VRAIMENT prouver ? Ne jamais s'appuyer sur la seule bonne foi de l'utilisateur ; ne lui demander que ce qui sera prouvé (une saisie non vérifiable décourage sans protéger) ; s'appuyer sur ce que le serveur voit lui-même ; limiter les abus (captcha, limites, délais) ; un indicateur de risque aide l'administrateur, il ne décide pas seul. Texte complet : CLAUDE.md de SAWALI (règle 21).
+
+
+## APK livré à CHAQUE livraison (règle du propriétaire, 16/11/2026 : « Tu ne m'envoies plus les APK »)
+- Après toute livraison qui touche cette application (même quand le changement vit dans le site affiché par l'application), construire un APK **release** (non débogable, jamais « debug » dans le nom) et l'ENVOYER au propriétaire avec `SendUserFile`, dans le chat, sans attendre qu'il le demande.
+- Numéro de version +1 à chaque APK ; nom du fichier livré sans « debug » ni « release » (ex. `concentration-1.38.apk`, `personnel-maison-1.33.apk`, `auror-direct-2.12.0.apk`).
+- Build : option Gradle `-PsignerAvecCleLocale=true` (clé locale de l'environnement, aucune clé dans le dépôt). Vérifier que le fichier contient bien la nouvelle version avant de l'envoyer.
+- Mentionner dans le compte rendu que Android refuse parfois la mise à jour (signature différente) et que la désinstallation efface les données locales.
