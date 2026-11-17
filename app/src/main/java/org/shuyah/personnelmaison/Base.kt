@@ -7,6 +7,7 @@ import androidx.security.crypto.MasterKey
 import kotlinx.coroutines.flow.Flow
 import net.sqlcipher.database.SQLiteDatabase
 import net.sqlcipher.database.SupportFactory
+import java.io.File
 import java.security.SecureRandom
 
 // ======================= Entités (une table chacune) =======================
@@ -442,21 +443,63 @@ val MIGRATION_6_7 = object : androidx.room.migration.Migration(6, 7) {
 
 object Base {
     private var instance: BaseDonnees? = null
+    const val NOM_FICHIER = "personnel_maison.db"
 
     /** Accès unique à la base (ouverte au premier appel ; synchronisé : appelé depuis plusieurs fils). */
     fun dao(c: Context): DaoMaison = synchronized(this) { (instance ?: ouvrir(c.applicationContext).also { instance = it }).dao() }
 
+    /** Préférences CHIFFRÉES « secrets » (clé de la base, clés de la sauvegarde en ligne). */
+    fun secrets(c: Context): android.content.SharedPreferences = EncryptedSharedPreferences.create(c.applicationContext, "secrets",
+        MasterKey.Builder(c.applicationContext).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build(),
+        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV, EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM)
+
+    /** Rapatrie dans le fichier principal tout ce qui est encore dans le journal (mode WAL) : le fichier de la base est alors complet et peut être copié tel quel. */
+    fun pointDeControle(c: Context) = synchronized(this) {
+        dao(c)                                                                      // ouvre la base si besoin
+        instance!!.openHelper.writableDatabase.query("PRAGMA wal_checkpoint(TRUNCATE)").use { it.moveToFirst() }
+    }
+
+    private const val TABLES_SQL = "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT IN ('android_metadata','room_master_table') ORDER BY name"
+
+    /** Nombre de lignes de chaque table de la base EN COURS D'UTILISATION (ce que l'utilisateur voit à l'écran). */
+    fun compterLive(c: Context): Map<String, Long> = synchronized(this) {
+        dao(c)
+        val db = instance!!.openHelper.writableDatabase
+        val noms = db.query(TABLES_SQL).use { k -> generateSequence { if (k.moveToNext()) k.getString(0) else null }.toList() }
+        noms.associateWith { n -> db.query("SELECT COUNT(*) FROM `$n`").use { k -> k.moveToFirst(); k.getLong(0) } }
+    }
+
+    /**
+     * Nombre de lignes de chaque table d'une COPIE de la base (octets du fichier principal + éventuel journal WAL), en la rouvrant à part avec la clé donnée.
+     * C'est la preuve qu'une copie est complète : on compare avec [compterLive]. Lève une exception si la copie est illisible.
+     */
+    fun compterCopie(c: Context, principal: ByteArray, wal: ByteArray?, cle: String): Map<String, Long> {
+        SQLiteDatabase.loadLibs(c)
+        val dossier = File(c.cacheDir, "verif_" + System.nanoTime()).also { it.mkdirs() }
+        try {
+            val f = File(dossier, NOM_FICHIER); f.writeBytes(principal)
+            if (wal != null) File(dossier, "$NOM_FICHIER-wal").writeBytes(wal)
+            val db = SQLiteDatabase.openDatabase(f.path, SQLiteDatabase.getBytes(cle.toCharArray()), null, SQLiteDatabase.OPEN_READWRITE, null, null)
+            try {
+                val noms = db.rawQuery(TABLES_SQL, null).use { k -> generateSequence { if (k.moveToNext()) k.getString(0) else null }.toList() }
+                return noms.associateWith { n -> db.rawQuery("SELECT COUNT(*) FROM `$n`", null).use { k -> k.moveToFirst(); k.getLong(0) } }
+            } finally { db.close() }
+        } finally { dossier.deleteRecursively() }
+    }
+
+    /** Ferme la base (avant de remplacer son fichier lors d'une restauration) ; elle sera rouverte au prochain accès. */
+    fun fermer() = synchronized(this) { instance?.close(); instance = null }
+
     private fun ouvrir(c: Context): BaseDonnees {
         SQLiteDatabase.loadLibs(c)
-        val prefs = EncryptedSharedPreferences.create(c, "secrets", MasterKey.Builder(c).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build(),
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV, EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM)
+        val prefs = secrets(c)
         var cle = prefs.getString("cle_base", null)
         if (cle == null) {
             val octets = ByteArray(32).also { SecureRandom().nextBytes(it) }
             cle = octets.joinToString("") { "%02x".format(it) }
             prefs.edit().putString("cle_base", cle).apply()
         }
-        return Room.databaseBuilder(c, BaseDonnees::class.java, "personnel_maison.db")
+        return Room.databaseBuilder(c, BaseDonnees::class.java, NOM_FICHIER)
             .openHelperFactory(SupportFactory(SQLiteDatabase.getBytes(cle.toCharArray()))).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7).build()
     }
 }

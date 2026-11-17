@@ -40,6 +40,7 @@ sealed class Ecran {
     object Recepteur : Ecran()   // récepteur de badges (présence par balises, SAWALI lot 387)
     object OuSuisJe : Ecran()    // « Vous êtes ici » : lieu de la balise la plus proche (SAWALI lot 388)
     object Tele : Ecran()        // projection de vidéos sur un téléviseur (SAWALI lot 418) : abonnement, appairage, télécommande
+    object Sauvegarde : Ecran()  // sauvegarde en ligne chiffrée (v1.35) : activer, sauvegarder, restaurer après réinstallation
     object Agenda : Ecran()      // Google Agenda par la passerelle SAWALI (lot 403) : rendez-vous, note vocale
     data class FormMedicament(val id: Long?) : Ecran()
     data class FamilleLien(val id: String) : Ecran()
@@ -188,6 +189,7 @@ private fun Racine() {
                 Ecran.Balises -> EcranBalises(::retour)
                 Ecran.Recepteur -> EcranRecepteur(::retour)
                 Ecran.OuSuisJe -> EcranOuSuisJe(::retour)
+                Ecran.Sauvegarde -> EcranSauvegarde(::retour)
                 Ecran.Agenda -> EcranAgenda(::retour)
                 Ecran.Tele -> EcranTele(::retour)
                 is Ecran.FormMedicament -> EcranFormMedicament(courant.id, ::retour)

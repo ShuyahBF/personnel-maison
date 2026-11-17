@@ -2,6 +2,21 @@
 
 Suivi des **arrivées et départs du personnel de maison** (aide ménagère, gardien, laveur de véhicule, cuisinier(ère), chauffeur…), fiche de chaque personne, sociétés de placement, bilans et évaluations. Tout reste **sur le téléphone, chiffré**.
 
+## Version 1.37 — Signature permanente + sauvegarde en ligne vérifiée (réunion des deux branches)
+- Réunit la signature avec la clé permanente ShuyahStore (version 1.35 de la branche principale) et la sauvegarde en ligne chiffrée vérifiée (1.35 / 1.36 de la branche « oeil-pin ») : les deux séries de versions utilisaient les mêmes numéros ; la suite repart à 1.37 (code 38).
+
+## Version 1.36 — Sauvegarde en ligne : copies VÉRIFIÉES, aperçu avant restauration, copie de secours (correctif grave de la 1.35)
+- **Incident (17/11/2026)** : avec la 1.35, une sauvegarde puis une restauration ont fait perdre les données du téléphone. La sauvegarde envoyée pesait 148 Ko (taille d'une base vide, identique à 17 minutes d'écart) : les données étaient restées dans le journal de la base (mode WAL) et n'avaient pas été copiées ; la restauration a ensuite remplacé la base et supprimé ce journal. Les données ne sont pas récupérables.
+- **Sauvegarde** : la copie de la base (fichier + journal) est ROUVERTE à part et ses lignes sont comptées ; elle n'est envoyée que si elle contient exactement les mêmes données que la base en cours d'utilisation (sinon : réessais puis REFUS avec message). Le résultat affiche ce qui a été vérifié (« 12 personnes, 340 pointages, 5 pièces jointes… »).
+- **Restauration en deux temps** : téléchargement et vérification SANS rien modifier, puis écran qui compare « la sauvegarde contient » et « ce téléphone contient » (avertissement rouge si la sauvegarde est vide alors que le téléphone ne l'est pas) ; seulement après confirmation, une COPIE DE SECOURS chiffrée des données actuelles est faite, puis le remplacement. Bouton « Rétablir les données d'avant » tant que la copie existe (jamais effacée automatiquement).
+- Ne pas se fier à une sauvegarde dont le message de vérification n'indique pas le contenu attendu.
+
+## Version 1.35 — Sauvegarde en ligne chiffrée (retrouver ses données après réinstallation)
+- Nouvel écran **Plus → Sauvegarde en ligne** (même principe que la sauvegarde en ligne d'auRor) : une **phrase secrète** (12 caractères au moins, œil pour la voir) chiffre sur le téléphone TOUTE la valise : base de données, pièces d'identité et documents, réglages, réglages de la famille et de l'agenda. Le serveur ShuyahStore ne reçoit que des octets illisibles (il ne garde que l'empreinte d'un jeton dérivé de la phrase).
+- **Sauvegarde automatique une fois par jour** à l'ouverture (toujours annoncée), « Sauvegarder maintenant », **restauration** de la dernière sauvegarde ou de la **version précédente**, désactivation avec effacement sur le serveur, ou « ce téléphone seulement ».
+- Après désinstallation / réinstallation (ou changement de version ShuyahStore) : Plus → Sauvegarde en ligne → retaper la phrase → « Restaurer ma sauvegarde » ; l'application redémarre avec toutes les données. Si la restauration échoue, les données actuelles sont conservées.
+- Limites : 55 Mo au plus ; **phrase perdue = sauvegarde irrécupérable** (personne ne peut la lire). Serveur : `ShuyahBF/ShuyahStore`, route `/api/sauvegardes` (lot 9). Tests : `SauvegardeCryptoTest`.
+
 ## Version 1.27 — Agenda sans réglage et politique de confidentialité propre
 - **Plus → Mon agenda** : plus d'identifiant ni de clé à saisir. L'application génère elle-même un identifiant d'appareil et une clé (gardés chiffrés) ; l'appareil est enregistré par SAWALI à la **demande d'accès** avec le compte Google déclaré, puis l'administrateur accepte.
 - Lien **« Politique de confidentialité de Personnel de maison »** dans l'écran (page propre sur le site de SAWALI).
