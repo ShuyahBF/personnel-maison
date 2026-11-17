@@ -10,6 +10,8 @@
     <!-- Ma famille : suivi de position au premier plan (notification permanente), avertissements, et ajout d'un proche par contact NFC -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <!-- Enregistrement d'écran de débogage (icône discrète) : service au premier plan de type « capture d'écran » -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.NFC" />
     <!-- Test des balises Bluetooth (Estimote, iBeacon, Eddystone) : écoute des annonces pendant que l'écran de test est ouvert. SANS « neverForLocation » : Android filtrerait alors les balises. -->
@@ -66,6 +68,8 @@
         </receiver>
         <receiver android:name=".RecepteurSurveillance" android:exported="false" />
         <receiver android:name=".RecepteurRepas" android:exported="false" />
+        <!-- Enregistrement d'écran de débogage : service au premier plan (mediaProjection) ; la vidéo est partagée par le FileProvider ci-dessous -->
+        <service android:name=".ServiceEnregistrementEcran" android:exported="false" android:foregroundServiceType="mediaProjection" />
         <!-- Partage de la photo prise pour la pièce d'identité (dossier temporaire privé) -->
         <provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.photos" android:exported="false" android:grantUriPermissions="true">
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/chemins_photos" />

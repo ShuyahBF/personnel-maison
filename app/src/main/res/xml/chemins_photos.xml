@@ -1,2 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<paths><cache-path name="photos" path="photos/" /></paths>
+<paths>
+    <cache-path name="photos" path="photos/" />
+    <!-- Vidéos de l'enregistrement d'écran de débogage : partagées une à une, effacées au bout de 7 jours -->
+    <external-files-path name="enregistrements" path="Movies/enregistrements/" />
+</paths>
