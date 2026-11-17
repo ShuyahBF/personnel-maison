@@ -17,8 +17,8 @@ android {
         minSdk = 26
         targetSdk = 35
         // Règle de version : VERSION +1 à chaque livraison (voir Version.kt).
-        versionCode = 37
-        versionName = "1.36"
+        versionCode = 38
+        versionName = "1.37"
         // Fichier brut : personnel-maison-<version>-release.apk, livré sous le nom personnel-maison-<version>.apk (sans « debug » ni « release »)
         setProperty("archivesBaseName", "personnel-maison-$versionName")
         // Date et heure de compilation, affichées en bas de l'écran principal.
@@ -26,7 +26,33 @@ android {
     }
     // Livraison : l'APK « release » (non débogable) est signé avec la clé locale de l'environnement pour pouvoir s'installer directement ;
     // il est livré sous le nom personnel-maison-<version>.apk (sans « debug »). Aucune clé de publication n'est dans le dépôt.
-    buildTypes { release { isMinifyEnabled = false; signingConfig = signingConfigs.getByName("debug") } }
+    // Signature PERMANENTE (clé ShuyahStore) : les 4 valeurs sont lues dans les variables d'environnement ANDROID_KEYSTORE_FILE, ANDROID_KEYSTORE_PASSWORD,
+    // ANDROID_KEY_ALIAS et ANDROID_KEY_PASSWORD (ou en propriétés Gradle -P…). Aucune clé ni mot de passe n'est dans le dépôt.
+    // Si l'une manque ou si le fichier est absent, on retombe sur la clé locale de l'environnement (clé de test).
+    fun valeurSignature(nom: String): String? =
+        ((project.findProperty(nom) as String?) ?: System.getenv(nom))?.takeIf { it.isNotBlank() }
+    val cheminCle = valeurSignature("ANDROID_KEYSTORE_FILE")
+    val mdpFichier = valeurSignature("ANDROID_KEYSTORE_PASSWORD")
+    val aliasCle = valeurSignature("ANDROID_KEY_ALIAS")
+    val mdpCle = valeurSignature("ANDROID_KEY_PASSWORD")
+    val signaturePermanente = cheminCle != null && file(cheminCle).exists() && mdpFichier != null && aliasCle != null && mdpCle != null
+    signingConfigs {
+        if (signaturePermanente) {
+            create("permanente") {
+                storeFile = file(cheminCle!!)
+                storePassword = mdpFichier
+                keyAlias = aliasCle
+                keyPassword = mdpCle
+            }
+        }
+    }
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+            // Clé permanente si disponible, sinon clé locale de l'environnement
+            signingConfig = if (signaturePermanente) signingConfigs.getByName("permanente") else signingConfigs.getByName("debug")
+        }
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

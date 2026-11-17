@@ -2,6 +2,9 @@
 
 Suivi des **arrivées et départs du personnel de maison** (aide ménagère, gardien, laveur de véhicule, cuisinier(ère), chauffeur…), fiche de chaque personne, sociétés de placement, bilans et évaluations. Tout reste **sur le téléphone, chiffré**.
 
+## Version 1.37 — Signature permanente + sauvegarde en ligne vérifiée (réunion des deux branches)
+- Réunit la signature avec la clé permanente ShuyahStore (version 1.35 de la branche principale) et la sauvegarde en ligne chiffrée vérifiée (1.35 / 1.36 de la branche « oeil-pin ») : les deux séries de versions utilisaient les mêmes numéros ; la suite repart à 1.37 (code 38).
+
 ## Version 1.36 — Sauvegarde en ligne : copies VÉRIFIÉES, aperçu avant restauration, copie de secours (correctif grave de la 1.35)
 - **Incident (17/11/2026)** : avec la 1.35, une sauvegarde puis une restauration ont fait perdre les données du téléphone. La sauvegarde envoyée pesait 148 Ko (taille d'une base vide, identique à 17 minutes d'écart) : les données étaient restées dans le journal de la base (mode WAL) et n'avaient pas été copiées ; la restauration a ensuite remplacé la base et supprimé ce journal. Les données ne sont pas récupérables.
 - **Sauvegarde** : la copie de la base (fichier + journal) est ROUVERTE à part et ses lignes sont comptées ; elle n'est envoyée que si elle contient exactement les mêmes données que la base en cours d'utilisation (sinon : réessais puis REFUS avec message). Le résultat affiche ce qui a été vérifié (« 12 personnes, 340 pointages, 5 pièces jointes… »).
