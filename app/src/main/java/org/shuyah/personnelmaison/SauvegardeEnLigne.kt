@@ -72,17 +72,47 @@ object SauvegardeEnLigne {
     }
 
     // ---------------------------------------------------------------- fabrication de la valise
-    /** Rassemble toutes les données du téléphone dans un ZIP (non chiffré, en mémoire, jamais écrit sur le disque). */
-    private suspend fun fabriquerValise(c: Context): ByteArray = withContext(Dispatchers.IO) {
-        Base.pointDeControle(c)                                                      // la base est complète dans son fichier
+    /** Libellés lisibles des tables pour les messages (« 12 personnes, 340 pointages… »). */
+    private val LIBELLES = mapOf("personnels" to "personnes", "pointages" to "pointages", "societes" to "sociétés", "operations" to "opérations du portefeuille",
+        "medicaments" to "médicaments", "paiements" to "paiements", "notes" to "notes", "evaluations" to "évaluations", "taches" to "tâches", "documents_societe" to "documents de sociétés")
+    fun resumer(comptes: Map<String, Long>, pieces: Int = -1): String {
+        val l = comptes.filter { it.value > 0 && it.key in LIBELLES }.map { "${it.value} ${LIBELLES[it.key]}" }.toMutableList()
+        if (pieces > 0) l.add("$pieces pièce(s) jointe(s)")
+        return if (l.isEmpty()) "aucune donnée" else l.joinToString(", ")
+    }
+    private fun total(comptes: Map<String, Long>) = comptes.filterKeys { it in LIBELLES }.values.sum()
+
+    /**
+     * Photographie de TOUTES les données du téléphone (base + journal WAL, clé de la base, réglages, famille, pièces déchiffrées).
+     * IMPORTANT (leçon de la version 1.35 : une sauvegarde incomplète a fait perdre des données) : la copie de la base est ROUVERTE à part et ses lignes sont comptées ;
+     * elle n'est acceptée que si elle contient EXACTEMENT les mêmes données que la base en cours d'utilisation. Sinon on réessaie, puis on refuse (jamais de sauvegarde « à peu près »).
+     */
+    private suspend fun instantane(c: Context): Pair<LinkedHashMap<String, ByteArray>, Map<String, Long>> = withContext(Dispatchers.IO) {
         val entrees = LinkedHashMap<String, ByteArray>()
+        val cleBase = Base.secrets(c).getString("cle_base", null) ?: throw Erreur("Clé de la base introuvable")
+        val fichier = c.getDatabasePath(Base.NOM_FICHIER); val journal = File(fichier.path + "-wal")
+        var comptes: Map<String, Long>? = null
+        var dernier = ""
+        for (essai in 1..4) {
+            try { Base.pointDeControle(c) } catch (e: Exception) { /* le journal est de toute façon copié ci-dessous */ }
+            val principal = fichier.readBytes()
+            val wal = if (journal.exists() && journal.length() > 0) journal.readBytes() else null
+            val live = Base.compterLive(c)
+            val copie = try { Base.compterCopie(c, principal, wal, cleBase) } catch (e: Exception) { dernier = "copie illisible (${e.message})"; kotlinx.coroutines.delay(300); continue }
+            if (copie == live) {
+                entrees["base/${Base.NOM_FICHIER}"] = principal; if (wal != null) entrees["base/${Base.NOM_FICHIER}-wal"] = wal
+                comptes = live; break
+            }
+            dernier = "la copie contient ${resumer(copie)} alors que le téléphone contient ${resumer(live)}"; kotlinx.coroutines.delay(300)
+        }
+        if (comptes == null) throw Erreur("Sauvegarde REFUSÉE pour ne rien perdre : $dernier. Fermez puis rouvrez l'application et réessayez.")
         entrees["manifeste"] = "personnel-maison;${Version.VERSION};${System.currentTimeMillis()}".toByteArray()
-        entrees["base/${Base.NOM_FICHIER}"] = c.getDatabasePath(Base.NOM_FICHIER).readBytes()
-        entrees["secrets/cle_base"] = (Base.secrets(c).getString("cle_base", null) ?: throw Erreur("Clé de la base introuvable")).toByteArray()
+        entrees["secrets/cle_base"] = cleBase.toByteArray()
         entrees["reglages"] = SauvegardeCrypto.prefsVersOctets(reglages(c).all.filterKeys { !it.startsWith(PREFIXE) })
         entrees["famille"] = SauvegardeCrypto.prefsVersOctets(ClientFamille.prefs(c).all)
         for (nom in Pieces.noms(c)) Pieces.lireOctets(c, nom)?.let { entrees["pieces/$nom"] = it }     // déchiffrées avec la clé de CE téléphone : la valise est rechiffrée en bloc
-        SauvegardeCrypto.archiver(entrees)
+        entrees["comptes"] = SauvegardeCrypto.prefsVersOctets(comptes.mapValues { it.value })
+        Pair(entrees, comptes)
     }
 
     /** Envoie une sauvegarde maintenant (mode « cloud » et clés présentes). */
@@ -97,12 +127,14 @@ object SauvegardeEnLigne {
     } catch (e: Erreur) { Resultat(false, e.message ?: "Sauvegarde impossible") } catch (e: Exception) { Resultat(false, "Sauvegarde impossible : ${e.message ?: e.javaClass.simpleName}") }
 
     private suspend fun envoyer(c: Context, cles: SauvegardeCrypto.Cles): Resultat {
-        val chiffre = withContext(Dispatchers.IO) { SauvegardeCrypto.chiffrer(cles.chiffre, fabriquerValise(c)) }
+        val (entrees, comptes) = instantane(c)
+        val pieces = entrees.keys.count { it.startsWith("pieces/") }
+        val chiffre = withContext(Dispatchers.IO) { SauvegardeCrypto.chiffrer(cles.chiffre, SauvegardeCrypto.archiver(entrees)) }
         if (chiffre.size > TAILLE_MAX) return Resultat(false, "Sauvegarde trop volumineuse (${chiffre.size / (1024 * 1024)} Mo, 55 Mo au plus) : supprimez des pièces volumineuses")
         return withContext(Dispatchers.IO) {
             appel(cles, "PUT", corps = chiffre).use { r ->
                 if (!r.isSuccessful) Resultat(false, messageServeur(r, "Envoi refusé"))
-                else { reglages(c).edit().putLong("sauv_dernier", System.currentTimeMillis()).apply(); Resultat(true, "Sauvegarde terminée (${chiffre.size / 1024} Ko, chiffrée)") }
+                else { reglages(c).edit().putLong("sauv_dernier", System.currentTimeMillis()).apply(); Resultat(true, "Sauvegarde terminée et VÉRIFIÉE : ${resumer(comptes, pieces)} (${chiffre.size / 1024} Ko, chiffrée)") }
             }
         }
     }
@@ -141,8 +173,14 @@ object SauvegardeEnLigne {
         if (actif(c) && System.currentTimeMillis() - dernierEnvoi(c) > INTERVALLE_AUTO_MS) sauvegarder(c) else null
 
     // ---------------------------------------------------------------- restauration
-    /** Remplace TOUTES les données de ce téléphone par celles de la sauvegarde. `precedente` : la version d'avant. L'application est ensuite relancée. */
-    suspend fun restaurer(c: Context, phrase: String, precedente: Boolean = false): Resultat = try {
+    /** Ce que contient la sauvegarde (vérifié en rouvrant sa base) et ce que contient ce téléphone : montré AVANT de remplacer quoi que ce soit. */
+    class Apercu(val entrees: Map<String, ByteArray>, val cles: SauvegardeCrypto.Cles, val sauvegarde: Map<String, Long>, val pieces: Int, val telephone: Map<String, Long>) {
+        val vide get() = total(sauvegarde) == 0L
+        val telephoneVide get() = total(telephone) == 0L
+    }
+
+    /** Télécharge, déchiffre et VÉRIFIE la sauvegarde sans rien modifier sur le téléphone. */
+    suspend fun apercu(c: Context, phrase: String, precedente: Boolean = false): Pair<Apercu?, Resultat> = try {
         val cles = withContext(Dispatchers.Default) { SauvegardeCrypto.deriver(phrase) }
         val chiffre = withContext(Dispatchers.IO) {
             appel(cles, "GET", if (precedente) "?precedente=1" else "").use { r ->
@@ -154,37 +192,56 @@ object SauvegardeEnLigne {
         val entrees = try { SauvegardeCrypto.ouvrir(SauvegardeCrypto.dechiffrer(cles.chiffre, chiffre)) } catch (e: IllegalArgumentException) { throw Erreur(e.message ?: "Phrase secrète inexacte") }
         if (entrees["manifeste"]?.let { String(it).startsWith("personnel-maison;") } != true || entrees["base/${Base.NOM_FICHIER}"] == null || entrees["secrets/cle_base"] == null)
             throw Erreur("Cette sauvegarde n'est pas celle de Personnel de maison")
-        withContext(Dispatchers.IO) { appliquer(c, entrees, cles) }
-        Resultat(true, "Données restaurées")
+        val (sauv, tel) = withContext(Dispatchers.IO) {
+            Pair(Base.compterCopie(c, entrees["base/${Base.NOM_FICHIER}"]!!, entrees["base/${Base.NOM_FICHIER}-wal"], String(entrees["secrets/cle_base"]!!)), Base.compterLive(c))
+        }
+        Pair(Apercu(entrees, cles, sauv, entrees.keys.count { it.startsWith("pieces/") }, tel), Resultat(true, ""))
+    } catch (e: Erreur) { Pair(null, Resultat(false, e.message ?: "Restauration impossible")) } catch (e: Exception) { Pair(null, Resultat(false, "Restauration impossible : ${e.message ?: e.javaClass.simpleName}")) }
+
+    /** Fichier (chiffré par le téléphone) où est gardée la copie de secours d'AVANT la dernière restauration. */
+    private fun fichierSecours(c: Context) = File(File(c.filesDir, "avant_restauration").also { it.mkdirs() }, "donnees.enc")
+    fun secoursDisponible(c: Context) = fichierSecours(c).exists()
+    private fun cleSecours(c: Context) = androidx.security.crypto.MasterKey.Builder(c).setKeyScheme(androidx.security.crypto.MasterKey.KeyScheme.AES256_GCM).build()
+
+    /** Remplace les données du téléphone par celles de l'aperçu. D'ABORD une copie de secours chiffrée des données actuelles (jamais effacée automatiquement). */
+    suspend fun restaurer(c: Context, a: Apercu): Resultat = try {
+        withContext(Dispatchers.IO) {
+            val (actuel, _) = instantane(c)
+            val f = fichierSecours(c); if (f.exists()) f.delete()
+            androidx.security.crypto.EncryptedFile.Builder(c, f, cleSecours(c), androidx.security.crypto.EncryptedFile.FileEncryptionScheme.AES256_GCM_HKDF_4KB).build()
+                .openFileOutput().use { it.write(SauvegardeCrypto.archiver(actuel)) }
+            appliquer(c, a.entrees)
+            retenir(c, a.cles)                                                          // la sauvegarde en ligne reste active avec la même phrase
+            reglages(c).edit().putLong("sauv_dernier", System.currentTimeMillis()).apply()
+        }
+        Resultat(true, "Données restaurées : ${resumer(a.sauvegarde, a.pieces)}")
     } catch (e: Erreur) { Resultat(false, e.message ?: "Restauration impossible") } catch (e: Exception) { Resultat(false, "Restauration impossible : ${e.message ?: e.javaClass.simpleName}") }
 
-    /** Remet chaque chose à sa place. La base actuelle est mise de côté et rétablie si quoi que ce soit échoue. */
-    private fun appliquer(c: Context, entrees: Map<String, ByteArray>, cles: SauvegardeCrypto.Cles) {
+    /** Retour en arrière : rétablit les données d'AVANT la dernière restauration (copie de secours). */
+    suspend fun revenirEnArriere(c: Context): Resultat = try {
+        withContext(Dispatchers.IO) {
+            val f = fichierSecours(c); if (!f.exists()) throw Erreur("Aucune copie de secours")
+            val octets = androidx.security.crypto.EncryptedFile.Builder(c, f, cleSecours(c), androidx.security.crypto.EncryptedFile.FileEncryptionScheme.AES256_GCM_HKDF_4KB).build().openFileInput().use { it.readBytes() }
+            appliquer(c, SauvegardeCrypto.ouvrir(octets))
+        }
+        Resultat(true, "Données d'avant la restauration rétablies")
+    } catch (e: Erreur) { Resultat(false, e.message ?: "Retour impossible") } catch (e: Exception) { Resultat(false, "Retour impossible : ${e.message ?: e.javaClass.simpleName}") }
+
+    /** Remet chaque chose à sa place (base + journal, clé, pièces, réglages). Les clés de la sauvegarde en ligne (préfixe « sauv_ ») ne sont pas touchées. */
+    private fun appliquer(c: Context, entrees: Map<String, ByteArray>) {
         Base.fermer()
         val fichier = c.getDatabasePath(Base.NOM_FICHIER)
-        val avant = File(fichier.path + ".avant")
-        val anciennes = Base.secrets(c).getString("cle_base", null)
         fichier.parentFile?.mkdirs()
-        if (fichier.exists()) fichier.copyTo(avant, overwrite = true)
-        try {
-            for (suffixe in listOf("-wal", "-shm", "-journal")) File(fichier.path + suffixe).delete()
-            fichier.writeBytes(entrees["base/${Base.NOM_FICHIER}"]!!)
-            Base.secrets(c).edit().putString("cle_base", String(entrees["secrets/cle_base"]!!)).apply()
-            // pièces et documents : on repart d'un dossier propre, puis chaque fichier reprend son nom d'origine
-            Pieces.noms(c).forEach { Pieces.supprimer(c, it) }
-            entrees.filterKeys { it.startsWith("pieces/") }.forEach { (nom, octets) -> Pieces.ecrireNomme(c, nom.removePrefix("pieces/"), octets) }
-            // réglages : on remplace ceux de la sauvegarde, sans toucher aux réglages propres à la sauvegarde (préfixe « sauv_ »)
-            ecrirePrefs(reglages(c), entrees["reglages"], garder = PREFIXE)
-            ecrirePrefs(ClientFamille.prefs(c), entrees["famille"], garder = null)
-            retenir(c, cles)                                                            // la sauvegarde en ligne reste active avec la même phrase
-            reglages(c).edit().putLong("sauv_dernier", System.currentTimeMillis()).apply()
-            avant.delete()
-        } catch (e: Exception) {
-            // échec : on rétablit la base d'origine et sa clé
-            if (avant.exists()) avant.copyTo(fichier, overwrite = true)
-            if (anciennes != null) Base.secrets(c).edit().putString("cle_base", anciennes).apply()
-            throw Erreur("Restauration annulée, vos données actuelles sont conservées : ${e.message ?: e.javaClass.simpleName}")
-        }
+        for (suffixe in listOf("-wal", "-shm", "-journal")) File(fichier.path + suffixe).delete()
+        fichier.writeBytes(entrees["base/${Base.NOM_FICHIER}"]!!)
+        entrees["base/${Base.NOM_FICHIER}-wal"]?.let { File(fichier.path + "-wal").writeBytes(it) }
+        Base.secrets(c).edit().putString("cle_base", String(entrees["secrets/cle_base"]!!)).commit()
+        // pièces et documents : on repart d'un dossier propre, puis chaque fichier reprend son nom d'origine
+        Pieces.noms(c).forEach { Pieces.supprimer(c, it) }
+        entrees.filterKeys { it.startsWith("pieces/") }.forEach { (nom, octets) -> Pieces.ecrireNomme(c, nom.removePrefix("pieces/"), octets) }
+        // réglages : on remplace ceux de la sauvegarde, sans toucher aux réglages propres à la sauvegarde (préfixe « sauv_ »)
+        ecrirePrefs(reglages(c), entrees["reglages"], garder = PREFIXE)
+        ecrirePrefs(ClientFamille.prefs(c), entrees["famille"], garder = null)
     }
 
     private fun ecrirePrefs(p: android.content.SharedPreferences, octets: ByteArray?, garder: String?) {

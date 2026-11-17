@@ -7,6 +7,7 @@ import androidx.security.crypto.MasterKey
 import kotlinx.coroutines.flow.Flow
 import net.sqlcipher.database.SQLiteDatabase
 import net.sqlcipher.database.SupportFactory
+import java.io.File
 import java.security.SecureRandom
 
 // ======================= Entités (une table chacune) =======================
@@ -456,6 +457,34 @@ object Base {
     fun pointDeControle(c: Context) = synchronized(this) {
         dao(c)                                                                      // ouvre la base si besoin
         instance!!.openHelper.writableDatabase.query("PRAGMA wal_checkpoint(TRUNCATE)").use { it.moveToFirst() }
+    }
+
+    private const val TABLES_SQL = "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT IN ('android_metadata','room_master_table') ORDER BY name"
+
+    /** Nombre de lignes de chaque table de la base EN COURS D'UTILISATION (ce que l'utilisateur voit à l'écran). */
+    fun compterLive(c: Context): Map<String, Long> = synchronized(this) {
+        dao(c)
+        val db = instance!!.openHelper.writableDatabase
+        val noms = db.query(TABLES_SQL).use { k -> generateSequence { if (k.moveToNext()) k.getString(0) else null }.toList() }
+        noms.associateWith { n -> db.query("SELECT COUNT(*) FROM `$n`").use { k -> k.moveToFirst(); k.getLong(0) } }
+    }
+
+    /**
+     * Nombre de lignes de chaque table d'une COPIE de la base (octets du fichier principal + éventuel journal WAL), en la rouvrant à part avec la clé donnée.
+     * C'est la preuve qu'une copie est complète : on compare avec [compterLive]. Lève une exception si la copie est illisible.
+     */
+    fun compterCopie(c: Context, principal: ByteArray, wal: ByteArray?, cle: String): Map<String, Long> {
+        SQLiteDatabase.loadLibs(c)
+        val dossier = File(c.cacheDir, "verif_" + System.nanoTime()).also { it.mkdirs() }
+        try {
+            val f = File(dossier, NOM_FICHIER); f.writeBytes(principal)
+            if (wal != null) File(dossier, "$NOM_FICHIER-wal").writeBytes(wal)
+            val db = SQLiteDatabase.openDatabase(f.path, SQLiteDatabase.getBytes(cle.toCharArray()), null, SQLiteDatabase.OPEN_READWRITE, null, null)
+            try {
+                val noms = db.rawQuery(TABLES_SQL, null).use { k -> generateSequence { if (k.moveToNext()) k.getString(0) else null }.toList() }
+                return noms.associateWith { n -> db.rawQuery("SELECT COUNT(*) FROM `$n`", null).use { k -> k.moveToFirst(); k.getLong(0) } }
+            } finally { db.close() }
+        } finally { dossier.deleteRecursively() }
     }
 
     /** Ferme la base (avant de remplacer son fichier lors d'une restauration) ; elle sera rouverte au prochain accès. */

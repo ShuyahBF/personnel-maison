@@ -48,6 +48,8 @@ fun EcranSauvegarde(retour: () -> Unit) = Page("Sauvegarde en ligne", retour) {
     var occupe by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     var confirmer by remember { mutableStateOf<String?>(null) }        // "restaurer" | "precedente" | "desactiver"
+    var apercu by remember { mutableStateOf<SauvegardeEnLigne.Apercu?>(null) }         // contenu vérifié de la sauvegarde, montré avant de remplacer
+    val secours = SauvegardeEnLigne.secoursDisponible(c)
     val cloud = SauvegardeEnLigne.actif(c)
 
     /** Lance une opération réseau : « en cours » tout de suite, puis le résultat (jamais silencieux). */
@@ -98,19 +100,48 @@ fun EcranSauvegarde(retour: () -> Unit) = Page("Sauvegarde en ligne", retour) {
             SauvegardeEnLigne.choisirLocal(c); mode = "local"; annoncer(c, "Mode « ce téléphone seulement » : rien n'est envoyé en ligne", true)
         }
     }
+    if (secours) {
+        Carte("Copie de secours disponible", Icons.Filled.Shield) {
+            Text("Avant la dernière restauration, vos données d'alors ont été mises de côté sur ce téléphone. Vous pouvez les rétablir si la restauration ne vous convient pas.", fontSize = 15.sp, color = BleuNuit)
+        }
+        GrosBouton(Icons.Filled.Undo, "Rétablir les données d'avant", Orange, actif = !occupe) {
+            lancer("Retour en arrière en cours…", { SauvegardeEnLigne.revenirEnArriere(c) }) { if (it.ok) SauvegardeEnLigne.relancer(c) }
+        }
+    }
     if (occupe) Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) { CircularProgressIndicator(Modifier.size(24.dp)); Text("  Opération en cours…", fontSize = 16.sp, color = Bleu) }
     message?.let { Carte { Text(it, fontSize = 16.sp, color = BleuNuit) } }
 
+    // Contenu VÉRIFIÉ de la sauvegarde : l'utilisateur compare avec ce que contient ce téléphone avant de remplacer
+    apercu?.let { ap ->
+        AlertDialog(onDismissRequest = { apercu = null }, title = { Text("Remplacer les données de ce téléphone ?") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("La sauvegarde contient :", fontSize = 15.sp, color = BleuNuit)
+                    Text(SauvegardeEnLigne.resumer(ap.sauvegarde, ap.pieces), fontSize = 17.sp, color = if (ap.vide) Rouge else Vert)
+                    Text("Ce téléphone contient actuellement :", fontSize = 15.sp, color = BleuNuit)
+                    Text(SauvegardeEnLigne.resumer(ap.telephone), fontSize = 17.sp, color = Bleu)
+                    if (ap.vide && !ap.telephoneVide) Text("ATTENTION : la sauvegarde est VIDE alors que ce téléphone contient des données. Ne la restaurez pas.", fontSize = 15.sp, color = Rouge)
+                    Text("Vos données actuelles seront mises de côté sur ce téléphone (vous pourrez les rétablir), puis l'application redémarrera.", fontSize = 14.sp, color = Gris)
+                }
+            },
+            confirmButton = { Tuile(Icons.Filled.CloudDownload, "Remplacer", if (ap.vide && !ap.telephoneVide) Gris else Vert) {
+                apercu = null
+                lancer("Restauration en cours (ne fermez pas l'application)…", { SauvegardeEnLigne.restaurer(c, ap) }) { if (it.ok) SauvegardeEnLigne.relancer(c) }
+            } },
+            dismissButton = { Tuile(Icons.Filled.Close, "Annuler", Orange) { apercu = null } })
+    }
+
     // Confirmations (fenêtres de dialogue) : la restauration REMPLACE les données du téléphone, la désactivation EFFACE la sauvegarde du serveur
     when (confirmer) {
-        "restaurer", "precedente" -> AlertDialog(onDismissRequest = { confirmer = null }, title = { Text("Restaurer la sauvegarde ?") },
+        "restaurer", "precedente" -> AlertDialog(onDismissRequest = { confirmer = null }, title = { Text("Vérifier la sauvegarde") },
             text = {
-                Column { Text("Toutes les données de ce téléphone seront REMPLACÉES par celles de la sauvegarde, puis l'application redémarrera.")
+                Column { Text("La sauvegarde va d'abord être téléchargée et VÉRIFIÉE. Rien n'est remplacé tant que vous n'avez pas vu son contenu et confirmé.")
                     if (cloud) ChampPhrase("Phrase secrète", phrase) { phrase = it } }
             },
-            confirmButton = { Tuile(Icons.Filled.CloudDownload, "Restaurer", Vert, actif = SauvegardeCrypto.phraseValide(phrase)) {
+            confirmButton = { Tuile(Icons.Filled.Search, "Vérifier", Vert, actif = SauvegardeCrypto.phraseValide(phrase) && !occupe) {
                 val prec = confirmer == "precedente"; confirmer = null
-                lancer("Restauration en cours (ne fermez pas l'application)…", { SauvegardeEnLigne.restaurer(c, phrase, prec) }) { if (it.ok) SauvegardeEnLigne.relancer(c) }
+                if (!occupe) { occupe = true; message = null; annoncer(c, "Téléchargement et vérification en cours…")
+                    portee.launch { val (ap, r) = SauvegardeEnLigne.apercu(c, phrase, prec); occupe = false; if (ap != null) apercu = ap else { message = r.message; annoncer(c, r.message, true) } } }
             } },
             dismissButton = { Tuile(Icons.Filled.Close, "Annuler", Orange) { confirmer = null } })
         "desactiver" -> Confirmation("Effacer la sauvegarde en ligne ?", "La sauvegarde du serveur sera DÉFINITIVEMENT effacée. Vos données restent sur ce téléphone.",

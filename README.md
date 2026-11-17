@@ -2,6 +2,12 @@
 
 Suivi des **arrivées et départs du personnel de maison** (aide ménagère, gardien, laveur de véhicule, cuisinier(ère), chauffeur…), fiche de chaque personne, sociétés de placement, bilans et évaluations. Tout reste **sur le téléphone, chiffré**.
 
+## Version 1.36 — Sauvegarde en ligne : copies VÉRIFIÉES, aperçu avant restauration, copie de secours (correctif grave de la 1.35)
+- **Incident (17/11/2026)** : avec la 1.35, une sauvegarde puis une restauration ont fait perdre les données du téléphone. La sauvegarde envoyée pesait 148 Ko (taille d'une base vide, identique à 17 minutes d'écart) : les données étaient restées dans le journal de la base (mode WAL) et n'avaient pas été copiées ; la restauration a ensuite remplacé la base et supprimé ce journal. Les données ne sont pas récupérables.
+- **Sauvegarde** : la copie de la base (fichier + journal) est ROUVERTE à part et ses lignes sont comptées ; elle n'est envoyée que si elle contient exactement les mêmes données que la base en cours d'utilisation (sinon : réessais puis REFUS avec message). Le résultat affiche ce qui a été vérifié (« 12 personnes, 340 pointages, 5 pièces jointes… »).
+- **Restauration en deux temps** : téléchargement et vérification SANS rien modifier, puis écran qui compare « la sauvegarde contient » et « ce téléphone contient » (avertissement rouge si la sauvegarde est vide alors que le téléphone ne l'est pas) ; seulement après confirmation, une COPIE DE SECOURS chiffrée des données actuelles est faite, puis le remplacement. Bouton « Rétablir les données d'avant » tant que la copie existe (jamais effacée automatiquement).
+- Ne pas se fier à une sauvegarde dont le message de vérification n'indique pas le contenu attendu.
+
 ## Version 1.35 — Sauvegarde en ligne chiffrée (retrouver ses données après réinstallation)
 - Nouvel écran **Plus → Sauvegarde en ligne** (même principe que la sauvegarde en ligne d'auRor) : une **phrase secrète** (12 caractères au moins, œil pour la voir) chiffre sur le téléphone TOUTE la valise : base de données, pièces d'identité et documents, réglages, réglages de la famille et de l'agenda. Le serveur ShuyahStore ne reçoit que des octets illisibles (il ne garde que l'empreinte d'un jeton dérivé de la phrase).
 - **Sauvegarde automatique une fois par jour** à l'ouverture (toujours annoncée), « Sauvegarder maintenant », **restauration** de la dernière sauvegarde ou de la **version précédente**, désactivation avec effacement sur le serveur, ou « ce téléphone seulement ».
