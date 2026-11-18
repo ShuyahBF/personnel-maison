@@ -124,7 +124,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
             alpha = 0.92f
             setOnClickListener { basculerEnregistrement() }
         }
-        addContentView(icone, FrameLayout.LayoutParams((46 * d).toInt(), (46 * d).toInt(), Gravity.BOTTOM or Gravity.START).apply { leftMargin = (10 * d).toInt(); bottomMargin = (96 * d).toInt() })
+        addContentView(icone, FrameLayout.LayoutParams((46 * d).toInt(), (46 * d).toInt(), Gravity.BOTTOM or Gravity.START).apply { leftMargin = (10 * d).toInt(); bottomMargin = (140 * d).toInt() })      // au-dessus de la barre du bas (80 dp) ET de la zone des gestes : il ne cache plus le premier bouton
         EnregistreurEcran.auChangement = { actif, fichier ->
             // Aspect : rouge et clignotant pendant l'enregistrement ; discret sinon. À la fin, la feuille de partage s'ouvre toute seule.
             clignotement?.cancel()
@@ -222,7 +222,7 @@ private fun Racine() {
         if (pile.isEmpty()) NavigationBar(containerColor = Color.White) {
             listOf(Triple(Ecran.Aujourdhui, Icons.Filled.Today, "Aujourd'hui"), Triple(Ecran.Personnels, Icons.Filled.Groups, "Personnel"),
                 Triple(Ecran.Budget, Icons.Filled.AccountBalanceWallet, "Portefeuille"), Triple(Ecran.Societes, Icons.Filled.Business, "Sociétés"), Triple(Ecran.Plus, Icons.Filled.MoreHoriz, "Plus")).forEach { (e, icone, nom) ->
-                NavigationBarItem(onglet == e, { ouvrir(e) }, { Icon(icone, nom) }, label = { Text(nom, fontSize = 11.sp) })
+                NavigationBarItem(onglet == e, { ouvrir(e) }, { Icon(icone, nom) }, label = { Text(nom, fontSize = 9.sp, maxLines = 1, softWrap = false) })      // légendes du bas plus petites : sur une seule ligne, jamais coupées
             }
         }
     }) { marge ->
