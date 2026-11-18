@@ -244,11 +244,14 @@ fun BlocTaches(personnel: Personnel) {
     val suggestions = TACHES_SUGGEREES[personnel.fonction] ?: emptyList()
     Carte("Tâches habituelles", Icons.Filled.Checklist) {
         if (taches.isEmpty()) Text("Aucune tâche définie.", fontSize = 13.sp, color = Gris)
-        taches.forEach { t ->
-            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Filled.CheckCircleOutline, null, tint = Bleu, modifier = Modifier.size(20.dp))
-                Text(t.libelle, fontSize = 15.sp, color = BleuNuit, modifier = Modifier.weight(1f).padding(start = 8.dp))
-                Icon(Icons.Filled.Delete, "Supprimer la tâche", tint = Rouge, modifier = Modifier.size(24.dp).clickable { scope.launch { dao.supprimerTache(t.id) } })
+        // Règle 24 : plus de 30 lignes → la liste défile dans son cadre
+        ListeBornee(taches.size) {
+            taches.forEach { t ->
+                Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Filled.CheckCircleOutline, null, tint = Bleu, modifier = Modifier.size(20.dp))
+                    Text(t.libelle, fontSize = 15.sp, color = BleuNuit, modifier = Modifier.weight(1f).padding(start = 8.dp))
+                    Icon(Icons.Filled.Delete, "Supprimer la tâche", tint = Rouge, modifier = Modifier.size(24.dp).clickable { scope.launch { dao.supprimerTache(t.id) } })
+                }
             }
         }
         Spacer(Modifier.height(8.dp))
@@ -289,10 +292,13 @@ fun BlocDocuments(societeId: Long, ouvrir: (Ecran) -> Unit) {
     Carte("Contrat de prestations et documents", Icons.Filled.Description) {
         Text("Photographiez le contrat (une photo par page) ou joignez une image ou un PDF. Copies chiffrées, absentes de la galerie.", fontSize = 12.sp, color = Gris)
         if (documents.isEmpty()) Text("Aucun document.", fontSize = 13.sp, color = Gris, modifier = Modifier.padding(top = 6.dp))
-        documents.forEach { d ->
-            Row(Modifier.fillMaxWidth().clickable { ouvrir(Ecran.Document(d.id)) }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(if (d.type == "PDF") Icons.Filled.PictureAsPdf else Icons.Filled.Image, null, tint = Bleu, modifier = Modifier.size(30.dp))
-                Column(Modifier.padding(start = 10.dp)) { Text(d.libelle, fontSize = 15.sp, color = BleuNuit); Text("Ajouté le ${horodatage(d.ajouteLe)}", fontSize = 11.sp, color = Gris) }
+        // Règle 24 : plus de 30 lignes → la liste défile dans son cadre
+        ListeBornee(documents.size) {
+            documents.forEach { d ->
+                Row(Modifier.fillMaxWidth().clickable { ouvrir(Ecran.Document(d.id)) }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(if (d.type == "PDF") Icons.Filled.PictureAsPdf else Icons.Filled.Image, null, tint = Bleu, modifier = Modifier.size(30.dp))
+                    Column(Modifier.padding(start = 10.dp)) { Text(d.libelle, fontSize = 15.sp, color = BleuNuit); Text("Ajouté le ${horodatage(d.ajouteLe)}", fontSize = 11.sp, color = Gris) }
+                }
             }
         }
         if (occupe) Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 6.dp)) { CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp); Text("  Enregistrement…", fontSize = 13.sp) }

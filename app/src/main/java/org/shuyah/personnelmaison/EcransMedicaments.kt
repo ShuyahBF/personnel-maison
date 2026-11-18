@@ -192,8 +192,11 @@ fun CarteMedicamentsProche(lien: ClientFamille.Lien) {
         }
         Text("Prises de ${lien.nom}", fontSize = 16.sp, color = BleuNuit, modifier = Modifier.padding(top = 10.dp))
         if (evenements.isEmpty()) Text(if (charge) "Rien à signaler pour le moment." else "Chargement…", fontSize = 14.sp, color = Gris)
-        evenements.forEach { e ->
-            Text((if (e.statut == "pris") "✔ " else "⚠ ") + RappelsMedicaments.libelleEvenement(e.copy(par = lien.nom)), fontSize = 14.sp, color = if (e.statut == "pris") Vert else Rouge, modifier = Modifier.padding(vertical = 2.dp))
+        // Règle 24 : plus de 30 lignes → la liste défile dans son cadre
+        ListeBornee(evenements.size) {
+            evenements.forEach { e ->
+                Text((if (e.statut == "pris") "✔ " else "⚠ ") + RappelsMedicaments.libelleEvenement(e.copy(par = lien.nom)), fontSize = 14.sp, color = if (e.statut == "pris") Vert else Rouge, modifier = Modifier.padding(vertical = 2.dp))
+            }
         }
     }
 }

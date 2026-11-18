@@ -138,14 +138,17 @@ fun EcranLaboNfc(retour: () -> Unit) = Page("Test NFC", retour) {
     }
 
     if (journal.isNotEmpty()) Carte("Journal", Icons.Filled.Checklist) {
-        journal.forEach { (heure, e) ->
-            val (icone, couleur) = when (e.etat) { LaboNfc.Etat.OK -> Icons.Filled.CheckCircle to Vert; LaboNfc.Etat.ECHEC -> Icons.Filled.Cancel to Rouge; LaboNfc.Etat.EN_COURS -> Icons.Filled.HourglassTop to Orange; LaboNfc.Etat.INFO -> Icons.Filled.Info to Bleu }
-            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.Top) {
-                Icon(icone, null, tint = couleur, modifier = Modifier.padding(top = 2.dp, end = 8.dp).size(22.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(e.libelle + (e.dureeMs?.let { " · $it ms" } ?: ""), fontSize = 14.sp, color = BleuNuit)
-                    if (e.detail.isNotBlank()) Text(e.detail, fontSize = 12.sp, color = Gris)
-                    Text(heure, fontSize = 10.sp, color = Gris)
+        // Règle 24 : plus de 30 lignes → la liste défile dans son cadre
+        ListeBornee(journal.size) {
+            journal.forEach { (heure, e) ->
+                val (icone, couleur) = when (e.etat) { LaboNfc.Etat.OK -> Icons.Filled.CheckCircle to Vert; LaboNfc.Etat.ECHEC -> Icons.Filled.Cancel to Rouge; LaboNfc.Etat.EN_COURS -> Icons.Filled.HourglassTop to Orange; LaboNfc.Etat.INFO -> Icons.Filled.Info to Bleu }
+                Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.Top) {
+                    Icon(icone, null, tint = couleur, modifier = Modifier.padding(top = 2.dp, end = 8.dp).size(22.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(e.libelle + (e.dureeMs?.let { " · $it ms" } ?: ""), fontSize = 14.sp, color = BleuNuit)
+                        if (e.detail.isNotBlank()) Text(e.detail, fontSize = 12.sp, color = Gris)
+                        Text(heure, fontSize = 10.sp, color = Gris)
+                    }
                 }
             }
         }

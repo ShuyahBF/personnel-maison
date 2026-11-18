@@ -136,15 +136,18 @@ fun EcranCorrections(ouvrir: (Ecran) -> Unit, retour: () -> Unit) {
     Page("Corriger un pointage", retour) {
         Question("Quel pointage corriger ?")
         if (pointages.isEmpty()) Text("Aucun pointage enregistré pour le moment.", fontSize = 18.sp, color = Gris)
-        pointages.forEach { pt ->
-            val p = personnels.find { it.id == pt.personnelId } ?: return@forEach
-            // Dernière action sur ce pointage (journal) : « corrigé le … »
-            val derniere = journal.filter { it.personnelId == pt.personnelId && it.date == pt.date }.maxByOrNull { it.horodatage }
-            Carte(modifier = Modifier.clickable { ouvrir(Ecran.Correction(pt.personnelId, pt.date)) }) {
-                Text("${p.prenoms} ${p.nom}", fontSize = 20.sp, color = BleuNuit)
-                Text(Calculs.dateLongue(LocalDate.parse(pt.date)), fontSize = 16.sp, color = Gris)
-                Text(if (pt.absent) "Absent" else "Arrivée ${Calculs.heure(pt.arrivee)}  ·  Départ ${Calculs.heure(pt.depart)}", fontSize = 18.sp, color = if (pt.absent) Rouge else BleuNuit)
-                if (derniere != null) Text("Dernière action : ${Calculs.actionTexte(derniere.action)} le ${horodatage(derniere.horodatage)}", fontSize = 12.sp, color = Gris)
+        // Règle 24 : plus de 30 lignes → la liste défile dans son cadre
+        ListeBornee(pointages.size) {
+            pointages.forEach { pt ->
+                val p = personnels.find { it.id == pt.personnelId } ?: return@forEach
+                // Dernière action sur ce pointage (journal) : « corrigé le … »
+                val derniere = journal.filter { it.personnelId == pt.personnelId && it.date == pt.date }.maxByOrNull { it.horodatage }
+                Carte(modifier = Modifier.clickable { ouvrir(Ecran.Correction(pt.personnelId, pt.date)) }) {
+                    Text("${p.prenoms} ${p.nom}", fontSize = 20.sp, color = BleuNuit)
+                    Text(Calculs.dateLongue(LocalDate.parse(pt.date)), fontSize = 16.sp, color = Gris)
+                    Text(if (pt.absent) "Absent" else "Arrivée ${Calculs.heure(pt.arrivee)}  ·  Départ ${Calculs.heure(pt.depart)}", fontSize = 18.sp, color = if (pt.absent) Rouge else BleuNuit)
+                    if (derniere != null) Text("Dernière action : ${Calculs.actionTexte(derniere.action)} le ${horodatage(derniere.horodatage)}", fontSize = 12.sp, color = Gris)
+                }
             }
         }
     }
@@ -200,9 +203,12 @@ fun EcranCorrection(personnelId: Long, date: String, retour: () -> Unit) {
         }
         Carte("Historique de ce jour", Icons.Filled.History) {
             if (journal.isEmpty()) Text("Rien d'enregistré.", fontSize = 15.sp, color = Gris)
-            journal.forEach { j ->
-                val quoi = when (j.genre) { Genre.ARRIVEE -> "Arrivée"; Genre.DEPART -> "Départ"; Genre.ABSENCE -> "Absence"; else -> "Retard" }
-                Text("${quoi} ${Calculs.actionTexte(j.action)}" + (if (j.heure != null) " : ${Calculs.heure(j.heure)}" else "") + "\nle ${horodatage(j.horodatage)}", fontSize = 15.sp, color = BleuNuit, modifier = Modifier.padding(vertical = 5.dp))
+            // Règle 24 : plus de 30 lignes → la liste défile dans son cadre
+            ListeBornee(journal.size) {
+                journal.forEach { j ->
+                    val quoi = when (j.genre) { Genre.ARRIVEE -> "Arrivée"; Genre.DEPART -> "Départ"; Genre.ABSENCE -> "Absence"; else -> "Retard" }
+                    Text("${quoi} ${Calculs.actionTexte(j.action)}" + (if (j.heure != null) " : ${Calculs.heure(j.heure)}" else "") + "\nle ${horodatage(j.horodatage)}", fontSize = 15.sp, color = BleuNuit, modifier = Modifier.padding(vertical = 5.dp))
+                }
             }
         }
         if (pt != null) GrosBouton(Icons.Filled.DeleteForever, "Supprimer ce pointage", Rouge) { suppression = true }

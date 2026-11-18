@@ -207,10 +207,13 @@ fun EcranLienFamille(lienId: String, retour: () -> Unit) = Page("Ma famille", re
     if (l.verifie) {
         Carte("Messages", Icons.Filled.Chat) {
             if (messages.isEmpty()) Text("Aucun message. Écrivez le premier.", fontSize = 14.sp, color = Gris)
-            messages.forEach { m ->
-                Box(Modifier.fillMaxWidth(), contentAlignment = if (m.deMoi) Alignment.CenterEnd else Alignment.CenterStart) {
-                    Text(m.texte ?: "(message illisible)", fontSize = 16.sp, color = if (m.deMoi) Color.White else BleuNuit,
-                        modifier = Modifier.padding(vertical = 3.dp).clip(RoundedCornerShape(14.dp)).background(if (m.deMoi) Bleu else Fond).padding(horizontal = 12.dp, vertical = 8.dp))
+            // Règle 24 : plus de 30 lignes → la liste défile dans son cadre
+            ListeBornee(messages.size) {
+                messages.forEach { m ->
+                    Box(Modifier.fillMaxWidth(), contentAlignment = if (m.deMoi) Alignment.CenterEnd else Alignment.CenterStart) {
+                        Text(m.texte ?: "(message illisible)", fontSize = 16.sp, color = if (m.deMoi) Color.White else BleuNuit,
+                            modifier = Modifier.padding(vertical = 3.dp).clip(RoundedCornerShape(14.dp)).background(if (m.deMoi) Bleu else Fond).padding(horizontal = 12.dp, vertical = 8.dp))
+                    }
                 }
             }
             Champ("Votre message", saisie, { saisie = it }, lignes = 2)

@@ -62,3 +62,6 @@ Les règles permanentes du propriétaire (commits, version, commentaires, secret
 - Un nouvel écran, un nouveau projet : le champ secret reçoit l'œil dès la première version. Exception : la saisie d'un code à usage unique (code reçu par e-mail ou SMS, code de l'application d'authentification), qui n'est pas un secret durable.
 
 - Enregistrement d'écran de débogage (1.38, 17/11/2026) : petite icône discrète (rond translucide en bas à gauche, au-dessus de tout, même sous le verrou d'ouverture) qui filme l'écran (10 min au plus, sans son, accord d'Android à chaque fois, notification pendant l'enregistrement) ; la vidéo reste sur le téléphone, partagée par l'utilisateur, effacée après 7 jours. Code : EnregistreurEcran.kt (+ EnregistreurEcranLogique.kt testé), FileProvider « .photos » réutilisé. Retrait à la compilation : -PsansEnregistrement=true.
+
+## Listes de plus de 30 lignes : défilement dans leur cadre (règle 24, 18/11/2026 : « C'est une règle à considérer partout sur toutes les plateformes »)
+- Toute liste ou tableau de plus de 30 lignes défile dans son cadre (30 lignes de hauteur) au lieu d'allonger l'écran. Composant : `ListeBornee(nbLignes) { … }` (`ListeBornee.kt`) autour des lignes écrites avec `forEach` ; une `LazyColumn` à hauteur bornée convient aussi.
