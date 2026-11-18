@@ -173,39 +173,47 @@ fun BlocPaiements(personnel: Personnel) {
     val paiements by dao.paiementsDe(personnel.id).collectAsState(emptyList())
     var ajout by remember { mutableStateOf<String?>(null) }          // « BONUS » ou « RETENUE » : fenêtre d'ajout ouverte
     val mois = remember { YearMonth.now() }
-    Carte("Bonus et retenues sur salaire", Icons.Filled.Payments) {
+    Carte("Bonus, avances et retenues", Icons.Filled.Savings) {
         val net = Calculs.netAPayer(personnel.salaireNet, paiements, mois)
         Ligne("Salaire net", Calculs.francs(personnel.salaireNet))
         Ligne("Net à payer", Calculs.francs(net) + " (${Calculs.moisLong(mois)})")
-        if (paiements.isEmpty()) Text("Aucun bonus ni retenue.", fontSize = 13.sp, color = Gris, modifier = Modifier.padding(top = 6.dp))
+        if (paiements.isEmpty()) Text("Aucun bonus, avance ni retenue.", fontSize = 13.sp, color = Gris, modifier = Modifier.padding(top = 6.dp))
         paiements.take(20).forEach { p ->
             Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text((if (p.genre == "BONUS") "Bonus" else "Retenue") + " · " + Calculs.dateFr(p.date), fontSize = 12.sp, color = Gris)
+                    Text((when (p.genre) { "BONUS" -> "Bonus"; "AVANCE" -> "Avance"; else -> "Retenue" }) + " · " + Calculs.dateFr(p.date) +
+                        (if (p.genre == "AVANCE" && p.etalement > 1) " · déduite sur ${p.etalement} mois" else if (p.genre == "AVANCE") " · déduite en une fois" else ""), fontSize = 12.sp, color = Gris)
                     if (p.motif.isNotBlank()) Text(p.motif, fontSize = 14.sp, color = BleuNuit)
                 }
-                Text((if (p.genre == "BONUS") "+ " else "− ") + Calculs.francs(p.montant), fontSize = 15.sp, color = if (p.genre == "BONUS") Vert else Rouge, textAlign = TextAlign.End)
+                Text((if (p.genre == "BONUS") "+ " else if (p.genre == "AVANCE") "↗ " else "− ") + Calculs.francs(p.montant), fontSize = 15.sp, color = if (p.genre == "BONUS") Vert else if (p.genre == "AVANCE") Orange else Rouge, textAlign = TextAlign.End)
                 Icon(Icons.Filled.Delete, "Supprimer", tint = Rouge, modifier = Modifier.padding(start = 10.dp).size(24.dp).clickable { scope.launch { dao.supprimerPaiement(p.id) } })
             }
         }
         Spacer(Modifier.height(8.dp))
         RangeeTuiles {
             Tuile(Icons.Filled.AddCircle, "Bonus", Vert) { ajout = "BONUS" }
+            Tuile(Icons.Filled.Savings, "Avance", Orange) { ajout = "AVANCE" }
             Tuile(Icons.Filled.RemoveCircle, "Retenue", Rouge) { ajout = "RETENUE" }
         }
     }
     ajout?.let { genre ->
         var montant by remember { mutableStateOf("") }; var motif by remember { mutableStateOf("") }; var date by remember { mutableStateOf(LocalDate.now().toString()) }
-        AlertDialog(onDismissRequest = { ajout = null }, title = { Text(if (genre == "BONUS") "Nouveau bonus" else "Nouvelle retenue (retrait)") },
+        var etalement by remember { mutableStateOf("1 mois (d'un seul coup)") }          // avance seulement : nombre de mois de déduction
+        val choixEtalement = (1..12).map { if (it == 1) "1 mois (d'un seul coup)" else "$it mois" }
+        AlertDialog(onDismissRequest = { ajout = null }, title = { Text(when (genre) { "BONUS" -> "Nouveau bonus"; "AVANCE" -> "Nouvelle avance sur salaire"; else -> "Nouvelle retenue (retrait)" }) },
             text = {
                 Column {
                     Champ("Montant (FCFA)", montant, { montant = it.filter { ch -> ch.isDigit() } }, KeyboardType.Number)
                     ChampDate("Date", date, { date = it.toString() })
+                    if (genre == "AVANCE") Liste("À déduire du salaire sur", etalement, choixEtalement) { etalement = it }
                     Champ("Motif", motif, { motif = it })
                 }
             },
             confirmButton = { Tuile(Icons.Filled.Check, "Valider", Vert, actif = (montant.toLongOrNull() ?: 0) > 0) {
-                scope.launch { dao.ajouterPaiement(Paiement(personnelId = personnel.id, date = date, genre = genre, montant = montant.toLong(), motif = motif.trim())) }; ajout = null
+                scope.launch {
+                    dao.ajouterPaiement(Paiement(personnelId = personnel.id, date = date, genre = genre, montant = montant.toLong(), motif = motif.trim(), etalement = if (genre == "AVANCE") etalement.takeWhile { it.isDigit() }.toIntOrNull() ?: 1 else 1))
+                    android.widget.Toast.makeText(c, "Enregistré : ${Calculs.francs(montant.toLong())}", android.widget.Toast.LENGTH_SHORT).show()
+                }; ajout = null
             } },
             dismissButton = { Tuile(Icons.Filled.Close, "Annuler") { ajout = null } })
     }
