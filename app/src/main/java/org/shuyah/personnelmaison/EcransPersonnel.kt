@@ -86,6 +86,7 @@ fun EcranFichePersonnel(id: Long, ouvrir: (Ecran) -> Unit, retour: () -> Unit) {
             Ligne("Salaire net", Calculs.francs(personnel.salaireNet))
         }
         Carte("Téléphone", Icons.Filled.Phone) { BlocNumeros("Numéros", tousNumeros.filter { it.proprietaire == "PERSONNEL" && it.proprietaireId == id }) }
+        BlocSuiviPaie(personnel)
         BlocPaiements(personnel)
         BlocTaches(personnel)
         // Numéros de paiement mobile : ils sont sur la fiche de la SOCIÉTÉ d'appartenance
@@ -132,7 +133,7 @@ fun EcranFichePersonnel(id: Long, ouvrir: (Ecran) -> Unit, retour: () -> Unit) {
         scope.launch {
             Pieces.supprimer(c, personnel.pieceChemin)
             dao.supprimerPointagesDe(id); dao.supprimerJournalDe(id); dao.supprimerNotesDe(id)
-            dao.supprimerHoraires(id); dao.supprimerNumeros("PERSONNEL", id); dao.supprimerPaiementsDe(id); dao.supprimerTachesDe(id); dao.supprimerPersonnel(id)
+            dao.supprimerHoraires(id); dao.supprimerNumeros("PERSONNEL", id); dao.supprimerPaiementsDe(id); dao.supprimerVersementsDe(id); dao.supprimerTachesDe(id); dao.supprimerPersonnel(id)
         }
         suppression = false; retour()
     }, { suppression = false })
@@ -182,6 +183,7 @@ fun EcranFormPersonnel(id: Long?, retour: () -> Unit) {
     val horaires = remember { mutableStateMapOf<Int, Creneau>().apply { for (j in 0..5) put(j, Creneau(7 * 60, 17 * 60)) } }
     val numeros = remember { mutableStateListOf<NumeroEdit>() }                 // 3 numéros au plus, un par défaut
     var salaire by remember { mutableStateOf("") }
+    var jourPaie by remember { mutableStateOf("") }          // jour du mois où le salaire est dû (vide = dernier jour du mois)
     var pieceNom by remember { mutableStateOf<String?>(null) }; var pieceTexte by remember { mutableStateOf("") }
     var nouvellePiece by remember { mutableStateOf<String?>(null) }       // copie créée pendant cette saisie (supprimée si on annule)
     var occupe by remember { mutableStateOf(false) }; var message by remember { mutableStateOf<String?>(null) }
@@ -190,7 +192,7 @@ fun EcranFormPersonnel(id: Long?, retour: () -> Unit) {
     LaunchedEffect(id) {
         if (id != null) dao.personnelParId(id)?.let { p ->
             existant = p; nom = p.nom; prenoms = p.prenoms; fonction = p.fonction; societeId = p.societeId; debut = p.dateDebut; fin = p.dateFin
-            salaire = if (p.salaireNet > 0) p.salaireNet.toString() else ""
+            salaire = if (p.salaireNet > 0) p.salaireNet.toString() else ""; jourPaie = if (p.jourPaie > 0) p.jourPaie.toString() else ""
             val h = dao.horairesDe(p.id)
             horaires.clear()
             if (h.isNotEmpty()) h.forEach { horaires[it.jour] = Creneau(it.debutMin, it.finMin) } else horaires.putAll(Horaires.uniforme(p.debutMin, p.finMin, p.jours).parJour)
@@ -256,6 +258,7 @@ fun EcranFormPersonnel(id: Long?, retour: () -> Unit) {
             ChampDate("Date de fin (facultative)", fin, { fin = it.toString() }, { fin = null })
             EditeurHoraires(horaires)
             Champ("Salaire net à payer (FCFA)", salaire, { salaire = it.filter { ch -> ch.isDigit() } }, KeyboardType.Number)
+            Champ("Jour de paie du mois (1 à 28 ; vide = dernier jour)", jourPaie, { jourPaie = it.filter { ch -> ch.isDigit() }.take(2) }, KeyboardType.Number)
         }
         RangeeTuiles {
             Tuile(Icons.Filled.Check, "Enregistrer", Vert, actif = valide && !occupe) {
@@ -266,7 +269,7 @@ fun EcranFormPersonnel(id: Long?, retour: () -> Unit) {
                     val masque = horaires.keys.fold(0) { a, j -> a or (1 shl j) }
                     val p = Personnel(id = existant?.id ?: 0, nom = nom.trim(), prenoms = prenoms.trim(), fonction = fonction, societeId = societeId, dateDebut = debut, dateFin = fin,
                         debutMin = premier.debutMin, finMin = premier.finMin, jours = masque, salaireNet = salaire.toLongOrNull() ?: 0, telephone = "", pieceChemin = pieceNom, pieceTexte = pieceTexte,
-                        creeLe = existant?.creeLe ?: System.currentTimeMillis())
+                        creeLe = existant?.creeLe ?: System.currentTimeMillis(), jourPaie = (jourPaie.toIntOrNull() ?: 0).coerceIn(0, 28))
                     val pid = if (existant == null) dao.ajouterPersonnel(p) else { dao.modifierPersonnel(p); p.id }
                     dao.supprimerHoraires(pid)
                     horaires.toSortedMap().forEach { (j, cr) -> dao.ajouterHoraire(HorairePersonnel(personnelId = pid, jour = j, debutMin = cr.debutMin, finMin = cr.finMin)) }

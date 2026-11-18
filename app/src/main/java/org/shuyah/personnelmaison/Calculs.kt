@@ -52,6 +52,11 @@ data class ContratInfo(val horaires: Horaires, val dateDebut: LocalDate, val dat
 data class JourPointage(val date: LocalDate, val arrivee: Int?, val depart: Int?, val retardSignale: Boolean, val absent: Boolean)
 
 /** Chiffres d'un mois pour un personnel. */
+/** État de la paie d'un personnel pour un mois (voir Calculs.suiviMois). `reste` négatif = payé en trop ; `reporte` = reste des mois précédents. */
+enum class StatutPaie { PAYE, PARTIEL, EN_RETARD, A_VENIR, RIEN }
+data class SuiviMois(val mois: java.time.YearMonth, val net: Long, val verse: Long, val reste: Long, val reporte: Long, val echeance: java.time.LocalDate,
+                     val statut: StatutPaie, val retardJours: Int, val datePaiementFinal: java.time.LocalDate?)
+
 data class StatsMois(val joursAttendus: Int, val presences: Int, val absences: Int, val retards: Int, val retardTotalMin: Int,
                      val minutesTravaillees: Int, val departsAnticipes: Int)
 
@@ -131,10 +136,79 @@ object Calculs {
     /** Libellé lisible d'une action : « enregistrée », « corrigée », « effacée ». */
     fun actionTexte(action: String): String = when (action) { "CREATION" -> "enregistré"; "MODIFICATION" -> "corrigé"; "SUPPRESSION" -> "effacé"; else -> action.lowercase() }
 
-    /** Net à payer d'un mois : salaire net + bonus − retenues (le total du mois, sans tenir compte des paiements des autres mois). */
-    fun netAPayer(salaireNet: Long, paiements: List<Paiement>, mois: YearMonth): Long {
-        val duMois = paiements.filter { it.date.startsWith(mois.toString()) }
-        return salaireNet + duMois.filter { it.genre == "BONUS" }.sumOf { it.montant } - duMois.filter { it.genre == "RETENUE" }.sumOf { it.montant }
+    /**
+     * Part d'un mouvement imputée à un mois. BONUS et RETENUE : tout le montant, dans le mois de leur date. AVANCE : déduite à partir du mois de sa date,
+     * répartie sur `etalement` mois (le dernier mois reçoit le reste de la division, pour que le total déduit soit exactement le montant avancé).
+     */
+    fun partDuMois(p: Paiement, mois: YearMonth): Long {
+        val debut = try { YearMonth.parse(p.date.take(7)) } catch (e: Exception) { return 0 }
+        if (p.genre != "AVANCE") return if (debut == mois) p.montant else 0
+        val n = maxOf(1, p.etalement)
+        val rang = (mois.year * 12 + mois.monthValue) - (debut.year * 12 + debut.monthValue)
+        if (rang !in 0 until n) return 0
+        val base = p.montant / n
+        return if (rang == n - 1) p.montant - base * (n - 1) else base
+    }
+
+    /** Total des avances déduites dans un mois (les avances des mois précédents encore en cours de remboursement comptent). */
+    fun avancesDuMois(paiements: List<Paiement>, mois: YearMonth): Long = paiements.filter { it.genre == "AVANCE" }.sumOf { partDuMois(it, mois) }
+
+    /** Net à payer d'un mois : salaire net + bonus − retenues − avances déduites ce mois-là (sans tenir compte de ce qui a déjà été versé). */
+    fun netAPayer(salaireNet: Long, paiements: List<Paiement>, mois: YearMonth): Long =
+        salaireNet + paiements.filter { it.genre == "BONUS" }.sumOf { partDuMois(it, mois) } -
+            paiements.filter { it.genre == "RETENUE" }.sumOf { partDuMois(it, mois) } - avancesDuMois(paiements, mois)
+
+    /** Date à laquelle le salaire d'un mois doit être payé : le jour de paie choisi (1 à 28 ou plus), sinon le dernier jour du mois. */
+    fun echeance(mois: YearMonth, jourPaie: Int): LocalDate = mois.atDay(if (jourPaie in 1..mois.lengthOfMonth()) jourPaie else mois.lengthOfMonth())
+
+    /**
+     * Suivi de la paie d'un mois : net, versé, reste, reste des mois précédents (report), échéance, statut et jours de retard de paiement.
+     * Les mois dus vont du début du contrat au mois demandé ; un mois non soldé se reporte automatiquement sur le suivant.
+     */
+    fun suiviMois(salaireNet: Long, dateDebut: String, dateFin: String?, jourPaie: Int, paiements: List<Paiement>, versements: List<Versement>,
+                  mois: YearMonth, aujourdhui: LocalDate): SuiviMois {
+        val premier = try { YearMonth.parse(dateDebut.take(7)) } catch (e: Exception) { mois }
+        val dernier = dateFin?.let { try { YearMonth.parse(it.take(7)) } catch (e: Exception) { null } }
+        fun salaireDe(m: YearMonth) = if (!m.isBefore(premier) && (dernier == null || !m.isAfter(dernier))) salaireNet else 0L
+        fun verseDe(m: YearMonth) = versements.filter { it.mois == m.toString() }.sumOf { it.montant }
+        // Report : ce qui reste dû (ou est payé en trop, valeur négative) des mois précédents, au plus 5 ans en arrière
+        var reporte = 0L
+        var m = maxOf(premier, mois.minusMonths(60), compareBy { it.year * 12 + it.monthValue })
+        while (m.isBefore(mois)) { reporte += netAPayer(salaireDe(m), paiements, m) - verseDe(m); m = m.plusMonths(1) }
+        val net = netAPayer(salaireDe(mois), paiements, mois)
+        val verse = verseDe(mois)
+        val reste = net - verse
+        val ech = echeance(mois, jourPaie)
+        // Date du versement qui a soldé le mois : celui où le cumul versé atteint le net
+        var cumul = 0L
+        val dateSolde = if (net > 0 && reste <= 0) versements.filter { it.mois == mois.toString() }.sortedWith(compareBy({ it.date }, { it.id }))
+            .firstOrNull { cumul += it.montant; cumul >= net }?.let { try { LocalDate.parse(it.date) } catch (e: Exception) { null } } else null
+        val jours = { de: LocalDate, a: LocalDate -> maxOf(0L, java.time.temporal.ChronoUnit.DAYS.between(de, a)).toInt() }
+        val statut = when {
+            net <= 0 && verse == 0L -> StatutPaie.RIEN
+            reste <= 0 -> StatutPaie.PAYE
+            verse > 0 -> StatutPaie.PARTIEL
+            aujourdhui.isAfter(ech) -> StatutPaie.EN_RETARD
+            else -> StatutPaie.A_VENIR
+        }
+        val retard = when (statut) {
+            StatutPaie.PAYE -> if (dateSolde != null) jours(ech, dateSolde) else 0
+            StatutPaie.PARTIEL, StatutPaie.EN_RETARD -> jours(ech, aujourdhui)
+            else -> 0
+        }
+        return SuiviMois(mois, net, verse, reste, reporte, ech, statut, retard, dateSolde)
+    }
+
+    /** Phrase d'état d'un mois, avec les jours de retard de paiement : « Payé le 02/12/2026 · 2 jour(s) de retard ». */
+    fun texteStatut(s: SuiviMois): String {
+        val retard = if (s.retardJours > 0) " · ${s.retardJours} jour(s) de retard" else ""
+        return when (s.statut) {
+            StatutPaie.PAYE -> "Payé" + (s.datePaiementFinal?.let { " le " + dateFr(it) } ?: "") + (if (s.retardJours > 0) retard else " · à temps")
+            StatutPaie.PARTIEL -> "Payé en partie" + retard
+            StatutPaie.EN_RETARD -> "Non payé · ${s.retardJours} jour(s) de retard"
+            StatutPaie.A_VENIR -> "À payer le " + dateFr(s.echeance)
+            StatutPaie.RIEN -> "Rien à payer"
+        }
     }
 
     /**

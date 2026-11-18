@@ -42,7 +42,8 @@ data class Personnel(
     val telephone: String = "",
     val pieceChemin: String? = null,     // copie CHIFFRÉE de la pièce d'identité (fichier privé de l'application)
     val pieceTexte: String = "",         // texte lu par l'OCR sur la pièce
-    val creeLe: Long = System.currentTimeMillis()
+    val creeLe: Long = System.currentTimeMillis(),
+    val jourPaie: Int = 0                // jour du mois où le salaire doit être payé (1 à 28) ; 0 = dernier jour du mois (sert à compter les retards de paiement)
 )
 
 /** Pointage d'un jour : heures d'arrivée et de départ (minutes depuis minuit), retard signalé à la main, absence. Une ligne par personne et par jour. */
@@ -115,15 +116,32 @@ data class NumeroTel(
     val parDefaut: Boolean = false
 )
 
-/** Bonus (prime) payé ou retenue (retrait) faite sur le salaire d'un personnel. */
+/**
+ * Mouvement sur le salaire d'un personnel : BONUS (prime), RETENUE (retrait) ou AVANCE (argent donné d'avance, déduit ensuite du salaire).
+ * Un bonus et une retenue comptent dans le mois de leur date ; une avance se déduit à partir du mois de sa date, répartie sur `etalement` mois.
+ */
 @Entity(tableName = "paiements", indices = [Index("personnelId")])
 data class Paiement(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val personnelId: Long,
     val date: String,                  // AAAA-MM-JJ
-    val genre: String,                 // « BONUS » ou « RETENUE »
+    val genre: String,                 // « BONUS », « RETENUE » ou « AVANCE »
     val montant: Long,                 // FCFA, toujours positif
     val motif: String = "",
+    val creeLe: Long = System.currentTimeMillis(),
+    val etalement: Int = 1             // AVANCE seulement : nombre de mois sur lesquels l'avance est déduite (1 = d'un seul coup)
+)
+
+/** Versement de salaire : une somme réellement payée à un personnel, à une date, pour un mois donné (le mois peut être payé en plusieurs fois, ou en retard). */
+@Entity(tableName = "versements", indices = [Index("personnelId")])
+data class Versement(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val personnelId: Long,
+    val mois: String,                  // mois payé, AAAA-MM
+    val date: String,                  // date du paiement effectif, AAAA-MM-JJ
+    val montant: Long,                 // FCFA
+    val mode: String = "Espèces",      // Espèces, Orange Money, Moov Money, Telecel Money, Virement…
+    val note: String = "",
     val creeLe: Long = System.currentTimeMillis()
 )
 
@@ -336,6 +354,13 @@ interface DaoMaison {
     @Query("SELECT * FROM paiements WHERE personnelId = :id ORDER BY date DESC, id DESC") fun paiementsDe(id: Long): Flow<List<Paiement>>
     @Query("SELECT * FROM paiements") fun tousPaiements(): Flow<List<Paiement>>
 
+    // ---- Versements de salaire (suivi de la paie) ----
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun ajouterVersement(v: Versement): Long
+    @Query("DELETE FROM versements WHERE id = :id") suspend fun supprimerVersement(id: Long)
+    @Query("DELETE FROM versements WHERE personnelId = :id") suspend fun supprimerVersementsDe(id: Long)
+    @Query("SELECT * FROM versements WHERE personnelId = :id ORDER BY date DESC, id DESC") fun versementsDe(id: Long): Flow<List<Versement>>
+    @Query("SELECT * FROM versements") fun tousVersements(): Flow<List<Versement>>
+
     // ---- Tâches par défaut ----
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun ajouterTache(t: Tache): Long
     @Query("DELETE FROM taches WHERE id = :id") suspend fun supprimerTache(id: Long)
@@ -367,7 +392,7 @@ interface DaoMaison {
 /** Résultat de « nombre de pièces par opération » (affiche l'icône de pièce dans la liste). */
 data class NombrePieces(val operationId: Long, val n: Int)
 
-@Database(entities = [Societe::class, Personnel::class, Pointage::class, NotePerso::class, Evaluation::class, JournalPointage::class, HorairePersonnel::class, NumeroTel::class, Paiement::class, Tache::class, DocumentSociete::class, ProfilUtilisateur::class, Operation::class, LigneOperation::class, PieceOperation::class, Medicament::class, PriseMedicament::class], version = 7, exportSchema = true)
+@Database(entities = [Societe::class, Personnel::class, Pointage::class, NotePerso::class, Evaluation::class, JournalPointage::class, HorairePersonnel::class, NumeroTel::class, Paiement::class, Tache::class, DocumentSociete::class, ProfilUtilisateur::class, Operation::class, LigneOperation::class, PieceOperation::class, Medicament::class, PriseMedicament::class, Versement::class], version = 8, exportSchema = true)
 abstract class BaseDonnees : RoomDatabase() { abstract fun dao(): DaoMaison }
 
 /**
@@ -441,6 +466,16 @@ val MIGRATION_6_7 = object : androidx.room.migration.Migration(6, 7) {
     }
 }
 
+/** Migration 7 → 8 : suivi de la paie (versements, avances étalées, jour de paie). Les données existantes sont conservées. */
+val MIGRATION_7_8 = object : androidx.room.migration.Migration(7, 8) {
+    override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `paiements` ADD COLUMN `etalement` INTEGER NOT NULL DEFAULT 1")
+        db.execSQL("ALTER TABLE `personnels` ADD COLUMN `jourPaie` INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("CREATE TABLE IF NOT EXISTS `versements` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `personnelId` INTEGER NOT NULL, `mois` TEXT NOT NULL, `date` TEXT NOT NULL, `montant` INTEGER NOT NULL, `mode` TEXT NOT NULL, `note` TEXT NOT NULL, `creeLe` INTEGER NOT NULL)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_versements_personnelId` ON `versements` (`personnelId`)")
+    }
+}
+
 object Base {
     private var instance: BaseDonnees? = null
     const val NOM_FICHIER = "personnel_maison.db"
@@ -500,6 +535,6 @@ object Base {
             prefs.edit().putString("cle_base", cle).apply()
         }
         return Room.databaseBuilder(c, BaseDonnees::class.java, NOM_FICHIER)
-            .openHelperFactory(SupportFactory(SQLiteDatabase.getBytes(cle.toCharArray()))).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7).build()
+            .openHelperFactory(SupportFactory(SQLiteDatabase.getBytes(cle.toCharArray()))).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8).build()
     }
 }
