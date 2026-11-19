@@ -2,6 +2,13 @@
 
 Suivi des **arrivées et départs du personnel de maison** (aide ménagère, gardien, laveur de véhicule, cuisinier(ère), chauffeur…), fiche de chaque personne, sociétés de placement, bilans et évaluations. Tout reste **sur le téléphone, chiffré**.
 
+## Version 1.45 — Mesurer une surface avec la caméra
+- Nouvel écran **Plus → Mesurer une surface**, deux méthodes au choix :
+  - **Mesure en direct** (réalité augmentée, Google ARCore) : on vise le sol ou le mur, « Poser un point » à chaque coin ; la longueur de chaque côté, le périmètre et la **surface** s'affichent sur l'image. Sols et murs. Demande un téléphone compatible et les « Services Google Play pour la RA » (proposés à l'installation) ; sinon l'écran le dit et propose la mesure sur photo.
+  - **Mesure sur photo** (tous téléphones) : on photographie la surface avec un **repère de taille connue** posé à plat dessus (feuille A4 ou A3, carreau 30 × 30 ou 60 × 60, ou « Autre… » en centimètres), on touche ses 4 coins puis les coins de la surface : la perspective est corrigée et la surface calculée. Appui long sur un point pour le déplacer ; « Tourner le repère » inverse petit et grand côté (la surface ne change pas, seules les longueurs changent).
+- Rien n'est enregistré ni envoyé ; « Copier » met le résultat dans le presse-papiers. Précision : quelques centimètres par mètre, à vérifier au mètre ruban pour un achat important.
+- Code : `MesureSurface.kt` (géométrie pure, tests `MesureSurfaceTest`), `MesureAr.kt` (ARCore + affichage de la caméra), `EcranMesure.kt`. **La mesure en direct n'a pas pu être essayée sur un téléphone avant livraison** (pas de téléphone dans l'environnement de compilation) : premier essai à faire par le propriétaire.
+
 ## Version 1.37 — Signature permanente + sauvegarde en ligne vérifiée (réunion des deux branches)
 - Réunit la signature avec la clé permanente ShuyahStore (version 1.35 de la branche principale) et la sauvegarde en ligne chiffrée vérifiée (1.35 / 1.36 de la branche « oeil-pin ») : les deux séries de versions utilisaient les mêmes numéros ; la suite repart à 1.37 (code 38).
 

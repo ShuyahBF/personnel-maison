@@ -71,6 +71,8 @@
         <!-- Enregistrement d'écran de débogage : service au premier plan (mediaProjection) ; la vidéo est partagée par le FileProvider ci-dessous -->
         <service android:name=".ServiceEnregistrementEcran" android:exported="false" android:foregroundServiceType="mediaProjection" />
         <!-- Partage de la photo prise pour la pièce d'identité (dossier temporaire privé) -->
+        <!-- Mesure de surfaces en direct : la réalité augmentée de Google (ARCore) est FACULTATIVE ; sans elle, la mesure sur photo reste disponible -->
+        <meta-data android:name="com.google.ar.core" android:value="optional" />
         <provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.photos" android:exported="false" android:grantUriPermissions="true">
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/chemins_photos" />
         </provider>

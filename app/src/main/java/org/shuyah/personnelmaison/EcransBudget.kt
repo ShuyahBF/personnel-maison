@@ -420,6 +420,7 @@ fun EcranPlus(ouvrir: (Ecran) -> Unit) = Page("Plus") {
     GrosBouton(Icons.Filled.Place, "Où suis-je ?", Vert, sousTexte = "Page du lieu repéré par la balise la plus proche") { ouvrir(Ecran.OuSuisJe) }
     GrosBouton(Icons.Filled.Tv, "Ma Télé", Vert, sousTexte = "Vidéos sur le téléviseur, pilotées depuis ce téléphone") { ouvrir(Ecran.Tele) }
     GrosBouton(Icons.Filled.CalendarMonth, "Mon agenda", Bleu, sousTexte = "Google Agenda, rendez-vous par la voix") { ouvrir(Ecran.Agenda) }
+    GrosBouton(Icons.Filled.Straighten, "Mesurer une surface", Orange, sousTexte = "Avec la caméra : en direct ou sur photo") { ouvrir(Ecran.Mesure) }
     GrosBouton(Icons.Filled.CloudUpload, "Sauvegarde en ligne", Vert, sousTexte = "Retrouver mes données après réinstallation") { ouvrir(Ecran.Sauvegarde) }
     GrosBouton(Icons.Filled.Help, "Aide et à propos", Gris, sousTexte = "Réglages à faire, cochés automatiquement") { ouvrir(Ecran.Aide) }
     GrosBouton(Icons.Filled.AccountCircle, "Mon profil", Orange, sousTexte = "Coordonnées, adresse, position") { ouvrir(Ecran.Profil) }

@@ -65,3 +65,7 @@ Les règles permanentes du propriétaire (commits, version, commentaires, secret
 
 ## Listes de plus de 30 lignes : défilement dans leur cadre (règle 24, 18/11/2026 : « C'est une règle à considérer partout sur toutes les plateformes »)
 - Toute liste ou tableau de plus de 30 lignes défile dans son cadre (30 lignes de hauteur) au lieu d'allonger l'écran. Composant : `ListeBornee(nbLignes) { … }` (`ListeBornee.kt`) autour des lignes écrites avec `forEach` ; une `LazyColumn` à hauteur bornée convient aussi.
+
+## Mesurer une surface avec la caméra (1.45, propriétaire 19/11/2026)
+- Plus → « Mesurer une surface » : mesure EN DIRECT (réalité augmentée Google ARCore, dépendance `com.google.ar:core`, déclarée « optional » dans le manifeste) et mesure SUR PHOTO avec un repère de taille connue (feuille A4…), pour tous les téléphones. Géométrie pure et testée dans `MesureSurface.kt` (homographie, aire, projection à l'écran) ; `MesureAr.kt` = session ARCore + image caméra en OpenGL (tout ARCore sur le fil OpenGL) ; `EcranMesure.kt` = écrans. Rien n'est enregistré ni envoyé.
+- La partie ARCore ne se teste que sur un vrai téléphone compatible : toute modification de `MesureAr.kt` est à faire essayer par le propriétaire avant d'être dite « vérifiée ».
