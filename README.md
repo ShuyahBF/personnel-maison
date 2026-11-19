@@ -2,6 +2,10 @@
 
 Suivi des **arrivées et départs du personnel de maison** (aide ménagère, gardien, laveur de véhicule, cuisinier(ère), chauffeur…), fiche de chaque personne, sociétés de placement, bilans et évaluations. Tout reste **sur le téléphone, chiffré**.
 
+## Version 1.47 — APK allégé (71 Mo → 40 Mo)
+- Téléchargement depuis ShuyahStore devenu très lent : l'APK pesait 71 Mo parce qu'il embarquait aussi les bibliothèques natives x86 / x86_64 (émulateurs, ordinateurs, ~30 Mo). Seules celles des téléphones sont gardées (ARM 64 bits et 32 bits) : **40 Mo**, soit 44 % de moins. Aucun changement de fonctionnement sur téléphone.
+- Pistes suivantes si besoin : réduction du code (R8 / ProGuard, dex de 47 Mo) à essayer sur téléphone, car elle peut casser ARCore, la reconnaissance de texte ou le chiffrement.
+
 ## Version 1.46 — Bouton d'enregistrement vidéo déplaçable et masquable
 - Le petit rond d'enregistrement d'écran (débogage) ne cache plus le bouton « Poser un point » de **Mesurer une surface** : on peut le **déplacer** en le glissant du doigt où l'on veut, et le **masquer** par un **appui long** (il devient un minuscule point presque invisible ; un nouvel appui long le réaffiche).
 - Sa place est retenue en fraction de l'écran (valable sur tous les téléphones et en rotation) ; pendant un enregistrement il reprend sa taille et ne peut pas être masqué. Toucher court = commencer / arrêter, comme avant.

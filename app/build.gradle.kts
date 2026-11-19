@@ -17,10 +17,13 @@ android {
         minSdk = 26
         targetSdk = 35
         // Règle de version : VERSION +1 à chaque livraison (voir Version.kt).
-        versionCode = 47
-        versionName = "1.46"
+        versionCode = 48
+        versionName = "1.47"
         // Fichier brut : personnel-maison-<version>-release.apk, livré sous le nom personnel-maison-<version>.apk (sans « debug » ni « release »)
         setProperty("archivesBaseName", "personnel-maison-$versionName")
+        // APK ALLÉGÉ (1.47) : seules les bibliothèques natives des TÉLÉPHONES sont gardées (ARM 64 bits et 32 bits). Les versions x86 / x86_64
+        // (émulateurs, ordinateurs) pesaient près de 30 Mo à elles seules, d'où un APK de 71 Mo très long à télécharger sur le réseau mobile.
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
         // Date et heure de compilation, affichées en bas de l'écran principal.
         // Enregistrement d'écran de débogage (icône discrète) : actif par défaut ; -PsansEnregistrement=true le retire
         buildConfigField("boolean", "ENREGISTREMENT_ECRAN", if ((project.findProperty("sansEnregistrement") as String?) == "true") "false" else "true")
