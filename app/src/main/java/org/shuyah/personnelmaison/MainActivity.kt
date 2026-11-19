@@ -112,30 +112,109 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
     private var clignotement: ObjectAnimator? = null
 
     /**
-     * Icône DISCRÈTE de l'enregistrement d'écran (débogage) : un petit rond translucide en bas à gauche, posé AU-DESSUS de tout l'écran (donc visible aussi sous le verrou d'ouverture). Toucher = commencer ; pendant l'enregistrement il devient rouge et clignote ; toucher = arrêter et envoyer la vidéo.
+     * Icône DISCRÈTE de l'enregistrement d'écran (débogage) : un petit rond translucide, posé AU-DESSUS de tout l'écran (donc visible aussi sous le verrou d'ouverture).
+     *  - TOUCHER = commencer l'enregistrement ; pendant l'enregistrement il devient rouge et clignote ; toucher = arrêter et envoyer la vidéo.
+     *  - GLISSER le doigt dessus = le DÉPLACER où l'on veut (sa place est retenue, en fraction de l'écran, donc valable sur tous les téléphones et en rotation).
+     *  - APPUI LONG (sans bouger) = le RÉDUIRE en minuscule point presque invisible (masqué) ; un nouvel appui long le rend à sa taille normale.
+     *    Pendant un enregistrement il ne peut pas être masqué (il faut pouvoir l'arrêter).
      */
     private fun installerIconeEnregistrement() {
         EnregistreurEcran.nettoyer(this)                                    // vieilles vidéos (plus de 7 jours) effacées
         val d = resources.displayMetrics.density
+        val prefsPos = getSharedPreferences("enregistrement_ecran", Context.MODE_PRIVATE)
         val discret = android.graphics.Color.parseColor("#E60B1F3A")
+        val tailleNormale = (46 * d).toInt(); val tailleReduite = (14 * d).toInt()   // rond normal / rond « masqué »
+        val margeHaut = (28 * d).toInt(); val margeBas = (24 * d).toInt()            // ni sous la barre d'état, ni sur la zone des gestes
+        var reduit = prefsPos.getBoolean("icone_reduite", false)
         val icone = TextView(this).apply {
             text = "●"; textSize = 22f; gravity = Gravity.CENTER; setTextColor(android.graphics.Color.WHITE)
             contentDescription = "Enregistrer l'écran pour le débogage"
             background = android.graphics.drawable.GradientDrawable().apply { shape = android.graphics.drawable.GradientDrawable.OVAL; setColor(discret) }
             alpha = 0.92f
-            setOnClickListener { basculerEnregistrement() }
         }
-        addContentView(icone, FrameLayout.LayoutParams((46 * d).toInt(), (46 * d).toInt(), Gravity.BOTTOM or Gravity.START).apply { leftMargin = (10 * d).toInt(); bottomMargin = (140 * d).toInt() })      // au-dessus de la barre du bas (80 dp) ET de la zone des gestes : il ne cache plus le premier bouton
+        val ecranL = { resources.displayMetrics.widthPixels }; val ecranH = { resources.displayMetrics.heightPixels }
+        val taille = { if (reduit) tailleReduite else tailleNormale }
+
+        // Pose le rond à (x, y) pixels, en gardant sa taille actuelle (normale ou réduite). Gravité HAUT-GAUCHE : les marges sont des coordonnées.
+        fun poser(x: Int, y: Int) {
+            val (bx, by) = EnregistreurEcranLogique.positionBornee(x, y, ecranL(), ecranH(), taille(), margeHaut, margeBas)
+            icone.layoutParams = FrameLayout.LayoutParams(taille(), taille(), Gravity.TOP or Gravity.START).apply { leftMargin = bx; topMargin = by }
+        }
+        // Remet le rond à la place mémorisée (fractions) ; à défaut, en bas à gauche, au-dessus de la barre du bas comme avant.
+        fun placeMemorisee() {
+            if (prefsPos.contains("icone_fx")) {
+                val (x, y) = EnregistreurEcranLogique.depuisFractions(prefsPos.getFloat("icone_fx", 0f), prefsPos.getFloat("icone_fy", 1f), ecranL(), ecranH(), taille(), margeHaut, margeBas)
+                poser(x, y)
+            } else poser((10 * d).toInt(), ecranH() - taille() - (140 * d).toInt())
+        }
+        fun memoriserPlace() {
+            val lp = icone.layoutParams as FrameLayout.LayoutParams
+            val (fx, fy) = EnregistreurEcranLogique.versFractions(lp.leftMargin, lp.topMargin, ecranL(), ecranH(), taille(), margeHaut, margeBas)
+            prefsPos.edit().putFloat("icone_fx", fx).putFloat("icone_fy", fy).apply()
+        }
+        // Aspect normal ou réduit (point de 14 dp, très transparent, texte caché). Le rond reste à sa place : seul son centre est conservé.
+        fun appliquerTaille() {
+            val lp = icone.layoutParams as FrameLayout.LayoutParams
+            val centreX = lp.leftMargin + lp.width / 2; val centreY = lp.topMargin + lp.height / 2
+            icone.textSize = if (reduit) 0f else 22f
+            icone.alpha = if (reduit) 0.35f else 0.92f
+            icone.contentDescription = if (reduit) "Bouton d'enregistrement masqué : appui long pour le réafficher" else "Enregistrer l'écran pour le débogage"
+            poser(centreX - taille() / 2, centreY - taille() / 2)
+        }
+
+        // Geste : toucher court = enregistrement ; glisser = déplacer ; appui long immobile = masquer / réafficher.
+        val seuilGlisse = android.view.ViewConfiguration.get(this).scaledTouchSlop
+        val delaiLong = android.view.ViewConfiguration.getLongPressTimeout().toLong()
+        val fil = android.os.Handler(android.os.Looper.getMainLooper())
+        var departX = 0f; var departY = 0f; var departGauche = 0; var departHaut = 0
+        var glisse = false; var appuiLong = false
+        val surAppuiLong = Runnable {
+            if (EnregistreurEcran.enCours) return@Runnable                  // jamais masqué pendant un enregistrement
+            appuiLong = true; reduit = !reduit
+            prefsPos.edit().putBoolean("icone_reduite", reduit).apply()
+            appliquerTaille(); memoriserPlace()
+            icone.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+            Toast.makeText(this, if (reduit) "Bouton d'enregistrement masqué (appui long pour le réafficher)" else "Bouton d'enregistrement réaffiché", Toast.LENGTH_SHORT).show()
+        }
+        icone.setOnTouchListener { v, e ->
+            val lp = v.layoutParams as FrameLayout.LayoutParams
+            when (e.actionMasked) {
+                android.view.MotionEvent.ACTION_DOWN -> {
+                    departX = e.rawX; departY = e.rawY; departGauche = lp.leftMargin; departHaut = lp.topMargin
+                    glisse = false; appuiLong = false
+                    fil.postDelayed(surAppuiLong, delaiLong); true
+                }
+                android.view.MotionEvent.ACTION_MOVE -> {
+                    val dx = e.rawX - departX; val dy = e.rawY - departY
+                    if (!glisse && !appuiLong && (kotlin.math.abs(dx) > seuilGlisse || kotlin.math.abs(dy) > seuilGlisse)) { glisse = true; fil.removeCallbacks(surAppuiLong) }
+                    if (glisse) poser(departGauche + dx.toInt(), departHaut + dy.toInt())
+                    true
+                }
+                android.view.MotionEvent.ACTION_UP -> {
+                    fil.removeCallbacks(surAppuiLong)
+                    if (glisse) memoriserPlace()                            // fin du déplacement : la nouvelle place est retenue
+                    else if (!appuiLong) { if (reduit) { reduit = false; prefsPos.edit().putBoolean("icone_reduite", false).apply(); appliquerTaille(); memoriserPlace() } else basculerEnregistrement() }
+                    true
+                }
+                android.view.MotionEvent.ACTION_CANCEL -> { fil.removeCallbacks(surAppuiLong); if (glisse) memoriserPlace(); true }
+                else -> false
+            }
+        }
+        addContentView(icone, FrameLayout.LayoutParams(taille(), taille(), Gravity.TOP or Gravity.START))
+        placeMemorisee()                                                    // à la place retenue (ou, la première fois, en bas à gauche au-dessus de la barre du bas)
+        if (reduit) appliquerTaille()
         // Aspect : rouge et clignotant pendant l'enregistrement ; discret (rond bleu nuit) sinon. Toujours un FOND PLEIN : jamais un « ● » nu.
+        // Redessiné aussi à chaque retour au premier plan (onResume), selon l'état RÉEL de l'enregistrement.
         habillerIcone = { actif ->
             clignotement?.cancel()
             icone.visibility = android.view.View.VISIBLE
             icone.background = android.graphics.drawable.GradientDrawable().apply { shape = android.graphics.drawable.GradientDrawable.OVAL; setColor(if (actif) android.graphics.Color.parseColor("#DC2626") else discret) }
             if (actif) {
+                if (reduit) { reduit = false; prefsPos.edit().putBoolean("icone_reduite", false).apply(); appliquerTaille() }   // un enregistrement commence : le rond reprend sa taille pour pouvoir l'arrêter
                 clignotement = ObjectAnimator.ofFloat(icone, "alpha", 1f, 0.45f).apply { duration = 900; repeatCount = ObjectAnimator.INFINITE; repeatMode = ObjectAnimator.REVERSE; start() }
                 icone.contentDescription = "Arrêter l'enregistrement d'écran et envoyer la vidéo"
             } else {
-                icone.alpha = 0.92f; icone.contentDescription = "Enregistrer l'écran pour le débogage"
+                icone.alpha = if (reduit) 0.35f else 0.92f; icone.contentDescription = if (reduit) "Bouton d'enregistrement masqué : appui long pour le réafficher" else "Enregistrer l'écran pour le débogage"
             }
         }
         habillerIcone?.invoke(EnregistreurEcran.enCours)

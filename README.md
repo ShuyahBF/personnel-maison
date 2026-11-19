@@ -2,7 +2,20 @@
 
 Suivi des **arrivées et départs du personnel de maison** (aide ménagère, gardien, laveur de véhicule, cuisinier(ère), chauffeur…), fiche de chaque personne, sociétés de placement, bilans et évaluations. Tout reste **sur le téléphone, chiffré**.
 
-## Version 1.46 — Enregistrement d'écran : 15 minutes, icône toujours visible
+## Version 1.48 — Réunion des deux séries 1.46 (rond déplaçable / enregistrement de 15 minutes) + APK allégé
+- La branche principale avait reçu, en parallèle, sa propre « 1.46 » (enregistrement de 15 minutes, icône redessinée à chaque retour au premier plan) pendant que ShuyahStore publiait une 1.46 (rond déplaçable et masquable) puis une 1.47 (APK allégé). Cette version réunit TOUT : rond déplaçable et masquable (glisser, appui long), enregistrement de 15 minutes, icône redessinée à chaque retour au premier plan, APK de 40 Mo.
+- Les numéros de version se suivent désormais sans doublon : 1.48 (code 49).
+
+## Version 1.47 — APK allégé (71 Mo → 40 Mo)
+- Téléchargement depuis ShuyahStore devenu très lent : l'APK pesait 71 Mo parce qu'il embarquait aussi les bibliothèques natives x86 / x86_64 (émulateurs, ordinateurs, ~30 Mo). Seules celles des téléphones sont gardées (ARM 64 bits et 32 bits) : **40 Mo**, soit 44 % de moins. Aucun changement de fonctionnement sur téléphone.
+- Pistes suivantes si besoin : réduction du code (R8 / ProGuard, dex de 47 Mo) à essayer sur téléphone, car elle peut casser ARCore, la reconnaissance de texte ou le chiffrement.
+
+## Versions 1.46 (de la branche « enregistreur déplaçable », déjà publiée dans ShuyahStore) — Bouton d'enregistrement vidéo déplaçable et masquable
+- Le petit rond d'enregistrement d'écran (débogage) ne cache plus le bouton « Poser un point » de **Mesurer une surface** : on peut le **déplacer** en le glissant du doigt où l'on veut, et le **masquer** par un **appui long** (il devient un minuscule point presque invisible ; un nouvel appui long le réaffiche).
+- Sa place est retenue en fraction de l'écran (valable sur tous les téléphones et en rotation) ; pendant un enregistrement il reprend sa taille et ne peut pas être masqué. Toucher court = commencer / arrêter, comme avant.
+- Code : `MainActivity.kt` (`installerIconeEnregistrement`), calculs testés dans `EnregistreurEcranLogique.kt` (`positionBornee`, `versFractions`, `depuisFractions`). **Geste à essayer sur téléphone** (non vérifiable sans écran tactile).
+
+## Version 1.46 (de la branche principale) — Enregistrement d'écran : 15 minutes, icône toujours visible
 - Durée maximale de l'**enregistrement d'écran** de débogage portée de **10 à 15 minutes** (texte d'explication mis à jour).
 - L'icône (rond en bas à gauche) est **redessinée à chaque retour au premier plan**, selon l'état réel de l'enregistrement : elle garde toujours son fond plein (bleu nuit au repos, rouge clignotant pendant l'enregistrement). Constat du propriétaire (19/11/2026) : après un appui long, le fond du rond avait disparu ; la cause exacte n'est pas établie (aucun appui long n'est programmé dans le code), cette version ne peut donc que la masquer.
 
