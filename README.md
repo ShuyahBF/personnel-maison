@@ -2,6 +2,10 @@
 
 Suivi des **arrivées et départs du personnel de maison** (aide ménagère, gardien, laveur de véhicule, cuisinier(ère), chauffeur…), fiche de chaque personne, sociétés de placement, bilans et évaluations. Tout reste **sur le téléphone, chiffré**.
 
+## Version 1.46 — Enregistrement d'écran : 15 minutes, icône toujours visible
+- Durée maximale de l'**enregistrement d'écran** de débogage portée de **10 à 15 minutes** (texte d'explication mis à jour).
+- L'icône (rond en bas à gauche) est **redessinée à chaque retour au premier plan**, selon l'état réel de l'enregistrement : elle garde toujours son fond plein (bleu nuit au repos, rouge clignotant pendant l'enregistrement). Constat du propriétaire (19/11/2026) : après un appui long, le fond du rond avait disparu ; la cause exacte n'est pas établie (aucun appui long n'est programmé dans le code), cette version ne peut donc que la masquer.
+
 ## Version 1.45 — Mesurer une surface avec la caméra
 - Nouvel écran **Plus → Mesurer une surface**, deux méthodes au choix :
   - **Mesure en direct** (réalité augmentée, Google ARCore) : on vise le sol ou le mur, « Poser un point » à chaque coin ; la longueur de chaque côté, le périmètre et la **surface** s'affichent sur l'image. Sols et murs. Demande un téléphone compatible et les « Services Google Play pour la RA » (proposés à l'installation) ; sinon l'écran le dit et propose la mesure sur photo.
