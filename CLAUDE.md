@@ -61,7 +61,7 @@ Les règles permanentes du propriétaire (commits, version, commentaires, secret
 - **Un seul composant par plateforme**, utilisé partout (jamais un `<input type="password">` nu) : web = `ChampMotDePasse` / `MotDePasse` / `PasswordInput` (ou le champ de base de l'interface qui l'intègre quand `type="password"`) ; Android Compose = champ avec `trailingIcon` (`Visibility` / `VisibilityOff`) ; Android à vues = `FrameLayout` + œil ; WinForms = case ou bouton œil qui bascule `UseSystemPasswordChar`.
 - Un nouvel écran, un nouveau projet : le champ secret reçoit l'œil dès la première version. Exception : la saisie d'un code à usage unique (code reçu par e-mail ou SMS, code de l'application d'authentification), qui n'est pas un secret durable.
 
-- Enregistrement d'écran de débogage (1.38, 17/11/2026) : petite icône discrète (rond translucide en bas à gauche, au-dessus de tout, même sous le verrou d'ouverture) qui filme l'écran (10 min au plus, sans son, accord d'Android à chaque fois, notification pendant l'enregistrement) ; la vidéo reste sur le téléphone, partagée par l'utilisateur, effacée après 7 jours. Code : EnregistreurEcran.kt (+ EnregistreurEcranLogique.kt testé), FileProvider « .photos » réutilisé. Retrait à la compilation : -PsansEnregistrement=true.
+- Enregistrement d'écran de débogage (1.38, 17/11/2026) : petite icône discrète (rond translucide en bas à gauche, au-dessus de tout, même sous le verrou d'ouverture) qui filme l'écran (15 min au plus depuis la 1.46, sans son, accord d'Android à chaque fois, notification pendant l'enregistrement) ; la vidéo reste sur le téléphone, partagée par l'utilisateur, effacée après 7 jours. Code : EnregistreurEcran.kt (+ EnregistreurEcranLogique.kt testé), FileProvider « .photos » réutilisé. Retrait à la compilation : -PsansEnregistrement=true.
 
 ## Listes de plus de 30 lignes : défilement dans leur cadre (règle 24, 18/11/2026 : « C'est une règle à considérer partout sur toutes les plateformes »)
 - Toute liste ou tableau de plus de 30 lignes défile dans son cadre (30 lignes de hauteur) au lieu d'allonger l'écran. Composant : `ListeBornee(nbLignes) { … }` (`ListeBornee.kt`) autour des lignes écrites avec `forEach` ; une `LazyColumn` à hauteur bornée convient aussi.
@@ -69,3 +69,15 @@ Les règles permanentes du propriétaire (commits, version, commentaires, secret
 ## Mesurer une surface avec la caméra (1.45, propriétaire 19/11/2026)
 - Plus → « Mesurer une surface » : mesure EN DIRECT (réalité augmentée Google ARCore, dépendance `com.google.ar:core`, déclarée « optional » dans le manifeste) et mesure SUR PHOTO avec un repère de taille connue (feuille A4…), pour tous les téléphones. Géométrie pure et testée dans `MesureSurface.kt` (homographie, aire, projection à l'écran) ; `MesureAr.kt` = session ARCore + image caméra en OpenGL (tout ARCore sur le fil OpenGL) ; `EcranMesure.kt` = écrans. Rien n'est enregistré ni envoyé.
 - La partie ARCore ne se teste que sur un vrai téléphone compatible : toute modification de `MesureAr.kt` est à faire essayer par le propriétaire avant d'être dite « vérifiée ».
+
+## Compte rendu par e-mail AUTOMATIQUE après toute livraison (règle du propriétaire, 19/11/2026 : « L'envoi de l'e-mail doit être automatique »)
+- L'e-mail HTML à jfrancois.ouoba@gmail.com (outil Gmail, voir règle 12) part TOUT SEUL à la fin de CHAQUE livraison, sans que le
+  propriétaire ait à le demander ni à le rappeler, et sans demander confirmation avant l'envoi.
+- « Livraison » = tout ce qui atteint le propriétaire ou les utilisateurs, même sans fusion ni déploiement Render : dépôt d'un APK ou d'une
+  nouvelle version dans ShuyahStore, publication d'une version, correction, changement de libellé, simple règle ajoutée au CLAUDE.md, fichier
+  envoyé au propriétaire. Aucune exception de taille.
+- Ne pas conclure « la règle ne s'applique pas, rien n'a été déployé sur Render » : en cas de doute, envoyer l'e-mail.
+- Contenu : date et heure, identification (dépôt, branche, commit, version, lot), périmètre, comment vérifier, à activer, points
+  d'attention, reste à faire. Jamais de secret (clé, mot de passe, chaîne de connexion) dans l'e-mail.
+- Charger l'outil Gmail avec ToolSearch AVANT de dire qu'il manque ; s'il est vraiment indisponible, le dire dans le chat et ne pas clore la livraison.
+

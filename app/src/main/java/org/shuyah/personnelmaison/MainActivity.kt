@@ -203,21 +203,32 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         addContentView(icone, FrameLayout.LayoutParams(taille(), taille(), Gravity.TOP or Gravity.START))
         placeMemorisee()                                                    // à la place retenue (ou, la première fois, en bas à gauche au-dessus de la barre du bas)
         if (reduit) appliquerTaille()
-        EnregistreurEcran.auChangement = { actif, fichier ->
-            // Aspect : rouge et clignotant pendant l'enregistrement ; discret sinon. À la fin, la feuille de partage s'ouvre toute seule.
+        // Aspect : rouge et clignotant pendant l'enregistrement ; discret (rond bleu nuit) sinon. Toujours un FOND PLEIN : jamais un « ● » nu.
+        // Redessiné aussi à chaque retour au premier plan (onResume), selon l'état RÉEL de l'enregistrement.
+        habillerIcone = { actif ->
             clignotement?.cancel()
+            icone.visibility = android.view.View.VISIBLE
+            icone.background = android.graphics.drawable.GradientDrawable().apply { shape = android.graphics.drawable.GradientDrawable.OVAL; setColor(if (actif) android.graphics.Color.parseColor("#DC2626") else discret) }
             if (actif) {
                 if (reduit) { reduit = false; prefsPos.edit().putBoolean("icone_reduite", false).apply(); appliquerTaille() }   // un enregistrement commence : le rond reprend sa taille pour pouvoir l'arrêter
-                icone.background = android.graphics.drawable.GradientDrawable().apply { shape = android.graphics.drawable.GradientDrawable.OVAL; setColor(android.graphics.Color.parseColor("#DC2626")) }
                 clignotement = ObjectAnimator.ofFloat(icone, "alpha", 1f, 0.45f).apply { duration = 900; repeatCount = ObjectAnimator.INFINITE; repeatMode = ObjectAnimator.REVERSE; start() }
                 icone.contentDescription = "Arrêter l'enregistrement d'écran et envoyer la vidéo"
             } else {
-                icone.background = android.graphics.drawable.GradientDrawable().apply { shape = android.graphics.drawable.GradientDrawable.OVAL; setColor(discret) }
-                icone.alpha = if (reduit) 0.35f else 0.92f; icone.contentDescription = "Enregistrer l'écran pour le débogage"
-                if (fichier != null) EnregistreurEcran.partager(this, fichier)
+                icone.alpha = if (reduit) 0.35f else 0.92f; icone.contentDescription = if (reduit) "Bouton d'enregistrement masqué : appui long pour le réafficher" else "Enregistrer l'écran pour le débogage"
             }
         }
+        habillerIcone?.invoke(EnregistreurEcran.enCours)
+        // À la fin d'un enregistrement, la feuille de partage s'ouvre toute seule
+        EnregistreurEcran.auChangement = { actif, fichier ->
+            habillerIcone?.invoke(actif)
+            if (!actif && fichier != null) EnregistreurEcran.partager(this, fichier)
+        }
     }
+
+    private var habillerIcone: ((Boolean) -> Unit)? = null
+
+    /** Retour au premier plan : l'icône est redessinée selon l'état RÉEL de l'enregistrement (elle ne peut plus rester sans fond). */
+    override fun onResume() { super.onResume(); habillerIcone?.invoke(EnregistreurEcran.enCours) }
 
     /** Touche de l'icône : arrête l'enregistrement en cours, ou explique puis demande l'accord d'Android pour en commencer un. */
     private fun basculerEnregistrement() {
@@ -233,14 +244,14 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         }
         if (prefs.getBoolean("explication_vue", false)) { demarrer(); return }
         android.app.AlertDialog.Builder(this).setTitle("Enregistrer l'écran")
-            .setMessage("Tout ce qui s'affiche à l'écran sera filmé (10 minutes au plus, sans le son), même sur la page de connexion.\n\n" +
+            .setMessage("Tout ce qui s'affiche à l'écran sera filmé (15 minutes au plus, sans le son), même sur la page de connexion.\n\n" +
                 "Ne tapez pas de mot de passe ni de code secret en clair pendant l'enregistrement.\n\nLa vidéo reste sur ce téléphone : vous choisissez à qui l'envoyer à la fin ; elle est effacée au bout de 7 jours.\n\nCette explication ne sera plus affichée : ensuite, toucher le rond lance directement l'enregistrement.")
             .setPositiveButton("Commencer") { _, _ -> prefs.edit().putBoolean("explication_vue", true).apply(); demarrer() }
             .setNegativeButton("Annuler", null).show()
     }
 
 
-    override fun onDestroy() { EnregistreurEcran.auChangement = null; clignotement?.cancel(); super.onDestroy() }
+    override fun onDestroy() { EnregistreurEcran.auChangement = null; habillerIcone = null; clignotement?.cancel(); super.onDestroy() }
 
     /** L'application est déjà ouverte et une étiquette est approchée (mode « singleTask » : l'intention arrive ici). */
     override fun onNewIntent(i: Intent) { super.onNewIntent(i); setIntent(i); traiterEtiquette(i) }
