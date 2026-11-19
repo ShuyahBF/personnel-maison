@@ -2,6 +2,9 @@
 
 Suivi des **arrivées et départs du personnel de maison** (aide ménagère, gardien, laveur de véhicule, cuisinier(ère), chauffeur…), fiche de chaque personne, sociétés de placement, bilans et évaluations. Tout reste **sur le téléphone, chiffré**.
 
+## Version 1.49 — Mesure en direct : le dessin ne déborde plus sur les boutons
+- Constat sur la vidéo d'essai du propriétaire (19/11/2026) : un côté qui sortait de l'image de la caméra se dessinait par-dessus la barre des boutons du bas. Le dessin est maintenant coupé aux bords de l'image.
+
 ## Version 1.48 — Réunion des deux séries 1.46 (rond déplaçable / enregistrement de 15 minutes) + APK allégé
 - La branche principale avait reçu, en parallèle, sa propre « 1.46 » (enregistrement de 15 minutes, icône redessinée à chaque retour au premier plan) pendant que ShuyahStore publiait une 1.46 (rond déplaçable et masquable) puis une 1.47 (APK allégé). Cette version réunit TOUT : rond déplaçable et masquable (glisser, appui long), enregistrement de 15 minutes, icône redessinée à chaque retour au premier plan, APK de 40 Mo.
 - Les numéros de version se suivent désormais sans doublon : 1.48 (code 49).

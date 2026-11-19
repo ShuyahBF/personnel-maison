@@ -30,6 +30,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -170,7 +171,8 @@ private fun MesureEnDirect(retour: () -> Unit, versPhoto: () -> Unit) {
             }
             return@Column
         }
-        Box(Modifier.fillMaxWidth().weight(1f).background(Color.Black)) {
+        // clipToBounds : le dessin (côtés, points) est COUPÉ aux bords de l'image de la caméra ; sans cela un côté qui sort de l'image se dessinait par-dessus les boutons du bas (constaté sur la vidéo du 19/11/2026)
+        Box(Modifier.fillMaxWidth().weight(1f).background(Color.Black).clipToBounds()) {
             if (cameraPermise) AndroidView(factory = { ar.creerVue(it) }, modifier = Modifier.fillMaxSize())
             // Par-dessus la caméra : points posés, côtés avec leur longueur, viseur au centre
             Canvas(Modifier.fillMaxSize()) {
