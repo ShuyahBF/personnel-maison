@@ -34,4 +34,31 @@ object EnregistreurEcranLogique {
 
     /** Une vidéo plus courte que cette durée est inutilisable (l'encodeur n'a rien écrit) : elle est supprimée au lieu d'être partagée. */
     const val DUREE_MIN_MS = 800
+
+    // ---- POSITION DU ROND (v1.46) : il se déplace au doigt, et sa place est retenue sous forme de FRACTION de l'écran
+    // (0 = bord gauche / haut, 1 = bord droit / bas) pour rester au bon endroit quand l'écran tourne ou sur un autre téléphone.
+
+    /**
+     * Ramène la position (coin haut-gauche du rond, en pixels) à l'intérieur de l'écran : jamais hors de l'écran, jamais sous la barre d'état
+     * (`margeHaut`) ni sur la zone des gestes du bas (`margeBas`).
+     */
+    fun positionBornee(x: Int, y: Int, largeurEcran: Int, hauteurEcran: Int, taille: Int, margeHaut: Int = 0, margeBas: Int = 0): Pair<Int, Int> {
+        val xMax = (largeurEcran - taille).coerceAtLeast(0)
+        val yMax = (hauteurEcran - taille - margeBas).coerceAtLeast(margeHaut)
+        return x.coerceIn(0, xMax) to y.coerceIn(margeHaut, yMax)
+    }
+
+    /** Position en pixels -> fractions (0..1) de la zone de déplacement possible, pour la mémoriser. */
+    fun versFractions(x: Int, y: Int, largeurEcran: Int, hauteurEcran: Int, taille: Int, margeHaut: Int = 0, margeBas: Int = 0): Pair<Float, Float> {
+        val largeurLibre = (largeurEcran - taille).coerceAtLeast(1)
+        val hauteurLibre = (hauteurEcran - taille - margeBas - margeHaut).coerceAtLeast(1)
+        return (x.toFloat() / largeurLibre).coerceIn(0f, 1f) to ((y - margeHaut).toFloat() / hauteurLibre).coerceIn(0f, 1f)
+    }
+
+    /** Fractions mémorisées -> position en pixels pour l'écran actuel (opération inverse de versFractions). */
+    fun depuisFractions(fx: Float, fy: Float, largeurEcran: Int, hauteurEcran: Int, taille: Int, margeHaut: Int = 0, margeBas: Int = 0): Pair<Int, Int> {
+        val largeurLibre = (largeurEcran - taille).coerceAtLeast(0)
+        val hauteurLibre = (hauteurEcran - taille - margeBas - margeHaut).coerceAtLeast(0)
+        return positionBornee((fx.coerceIn(0f, 1f) * largeurLibre).toInt(), margeHaut + (fy.coerceIn(0f, 1f) * hauteurLibre).toInt(), largeurEcran, hauteurEcran, taille, margeHaut, margeBas)
+    }
 }
