@@ -2,6 +2,11 @@
 
 Suivi des **arrivées et départs du personnel de maison** (aide ménagère, gardien, laveur de véhicule, cuisinier(ère), chauffeur…), fiche de chaque personne, sociétés de placement, bilans et évaluations. Tout reste **sur le téléphone, chiffré**.
 
+## Version 1.46 — Bouton d'enregistrement vidéo déplaçable et masquable
+- Le petit rond d'enregistrement d'écran (débogage) ne cache plus le bouton « Poser un point » de **Mesurer une surface** : on peut le **déplacer** en le glissant du doigt où l'on veut, et le **masquer** par un **appui long** (il devient un minuscule point presque invisible ; un nouvel appui long le réaffiche).
+- Sa place est retenue en fraction de l'écran (valable sur tous les téléphones et en rotation) ; pendant un enregistrement il reprend sa taille et ne peut pas être masqué. Toucher court = commencer / arrêter, comme avant.
+- Code : `MainActivity.kt` (`installerIconeEnregistrement`), calculs testés dans `EnregistreurEcranLogique.kt` (`positionBornee`, `versFractions`, `depuisFractions`). **Geste à essayer sur téléphone** (non vérifiable sans écran tactile).
+
 ## Version 1.45 — Mesurer une surface avec la caméra
 - Nouvel écran **Plus → Mesurer une surface**, deux méthodes au choix :
   - **Mesure en direct** (réalité augmentée, Google ARCore) : on vise le sol ou le mur, « Poser un point » à chaque coin ; la longueur de chaque côté, le périmètre et la **surface** s'affichent sur l'image. Sols et murs. Demande un téléphone compatible et les « Services Google Play pour la RA » (proposés à l'installation) ; sinon l'écran le dit et propose la mesure sur photo.

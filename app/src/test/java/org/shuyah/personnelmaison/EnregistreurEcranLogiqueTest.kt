@@ -35,4 +35,29 @@ class EnregistreurEcranLogiqueTest {
         val aSupprimer = EnregistreurEcranLogique.aPurger(listOf(ancienne, recente, autre), maintenant)
         assertEquals(listOf(ancienne), aSupprimer)
     }
+
+    @Test fun positionJamaisHorsEcran() {
+        val (x, y) = EnregistreurEcranLogique.positionBornee(5000, -300, 1080, 2400, 138, margeHaut = 60, margeBas = 90)
+        assertEquals(1080 - 138, x)                                  // collé au bord droit
+        assertEquals(60, y)                                          // jamais sous la barre d'état
+        assertEquals(2400 - 138 - 90, EnregistreurEcranLogique.positionBornee(0, 9999, 1080, 2400, 138, 60, 90).second)   // jamais sur la zone des gestes
+    }
+
+    @Test fun positionRetrouveeApresRotation() {
+        // Rond placé au milieu à droite d'un écran portrait, puis écran tourné : il reste au milieu à droite.
+        val (fx, fy) = EnregistreurEcranLogique.versFractions(1080 - 138, 1100, 1080, 2400, 138, 60, 90)
+        val (x, y) = EnregistreurEcranLogique.depuisFractions(fx, fy, 2400, 1080, 138, 60, 90)
+        assertEquals(2400 - 138, x)
+        assertTrue(y in 60..(1080 - 138 - 90))
+    }
+
+    @Test fun fractionsAbsurdesRamenees() {
+        val (x, y) = EnregistreurEcranLogique.depuisFractions(7f, -2f, 720, 1280, 100, 40, 50)
+        assertEquals(620, x); assertEquals(40, y)
+    }
+
+    @Test fun petitEcranSansPlace() {
+        val (x, y) = EnregistreurEcranLogique.positionBornee(10, 10, 50, 50, 100, 20, 20)       // écran plus petit que le rond : jamais d'erreur
+        assertTrue(x == 0 && y == 20)
+    }
 }
