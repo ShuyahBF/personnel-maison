@@ -69,3 +69,15 @@ Les règles permanentes du propriétaire (commits, version, commentaires, secret
 ## Mesurer une surface avec la caméra (1.45, propriétaire 19/11/2026)
 - Plus → « Mesurer une surface » : mesure EN DIRECT (réalité augmentée Google ARCore, dépendance `com.google.ar:core`, déclarée « optional » dans le manifeste) et mesure SUR PHOTO avec un repère de taille connue (feuille A4…), pour tous les téléphones. Géométrie pure et testée dans `MesureSurface.kt` (homographie, aire, projection à l'écran) ; `MesureAr.kt` = session ARCore + image caméra en OpenGL (tout ARCore sur le fil OpenGL) ; `EcranMesure.kt` = écrans. Rien n'est enregistré ni envoyé.
 - La partie ARCore ne se teste que sur un vrai téléphone compatible : toute modification de `MesureAr.kt` est à faire essayer par le propriétaire avant d'être dite « vérifiée ».
+
+## Compte rendu par e-mail AUTOMATIQUE après toute livraison (règle du propriétaire, 19/11/2026 : « L'envoi de l'e-mail doit être automatique »)
+- L'e-mail HTML à jfrancois.ouoba@gmail.com (outil Gmail, voir règle 12) part TOUT SEUL à la fin de CHAQUE livraison, sans que le
+  propriétaire ait à le demander ni à le rappeler, et sans demander confirmation avant l'envoi.
+- « Livraison » = tout ce qui atteint le propriétaire ou les utilisateurs, même sans fusion ni déploiement Render : dépôt d'un APK ou d'une
+  nouvelle version dans ShuyahStore, publication d'une version, correction, changement de libellé, simple règle ajoutée au CLAUDE.md, fichier
+  envoyé au propriétaire. Aucune exception de taille.
+- Ne pas conclure « la règle ne s'applique pas, rien n'a été déployé sur Render » : en cas de doute, envoyer l'e-mail.
+- Contenu : date et heure, identification (dépôt, branche, commit, version, lot), périmètre, comment vérifier, à activer, points
+  d'attention, reste à faire. Jamais de secret (clé, mot de passe, chaîne de connexion) dans l'e-mail.
+- Charger l'outil Gmail avec ToolSearch AVANT de dire qu'il manque ; s'il est vraiment indisponible, le dire dans le chat et ne pas clore la livraison.
+
