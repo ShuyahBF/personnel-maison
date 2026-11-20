@@ -25,7 +25,7 @@ import java.util.concurrent.TimeUnit
  *  - Appels réseau et fichiers : toujours hors du fil principal.
  */
 object SauvegardeEnLigne {
-    const val URL_PAR_DEFAUT = "https://shuyahstore-api.onrender.com"
+    const val URL_PAR_DEFAUT = "https://api.shuyahstore.store"
     private const val TAILLE_MAX = 55L * 1024 * 1024          // le serveur refuse au-delà de 60 Mo
     private const val INTERVALLE_AUTO_MS = 24L * 3600 * 1000
     private val http = OkHttpClient.Builder().callTimeout(180, TimeUnit.SECONDS).connectTimeout(60, TimeUnit.SECONDS).build()   // 1er appel : le serveur peut se réveiller
