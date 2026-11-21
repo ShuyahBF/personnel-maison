@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.snapshots.SnapshotStateList
@@ -406,22 +407,50 @@ fun EcranBudgetStats(retour: () -> Unit) {
 
 // ======================= Onglet « Plus » =======================
 
-/** Raccourcis vers les écrans moins fréquents (bilans du personnel, profil, statistiques du portefeuille). */
+/**
+ * PAGE « PLUS » = page de paramétrage et d'outils (v1.57) : chaque option est une ligne blanche avec son PICTOGRAMME AU TRACÉ BLEU
+ * (icône « contour », jamais pleine), son titre, une explication courte et une flèche. Les lignes sont rangées en rubriques.
+ * Tout en haut : la version installée et la vérification des mises à jour de ShuyahStore.
+ */
 @Composable
 fun EcranPlus(ouvrir: (Ecran) -> Unit) = Page("Plus") {
-    GrosBouton(Icons.Filled.BarChart, "Bilans du personnel", Bleu, sousTexte = "Présences, retards, paie du mois") { ouvrir(Ecran.Stats) }
-    GrosBouton(Icons.Filled.PieChart, "Statistiques du portefeuille", Vert, sousTexte = "Recettes, dépenses, catégories") { ouvrir(Ecran.BudgetStats) }
-    GrosBouton(Icons.Filled.Medication, "Médicaments", Bleu, sousTexte = "Rappels, prises, partage avec la famille") { ouvrir(Ecran.Medicaments) }
-    GrosBouton(Icons.Filled.Restaurant, "Repas", Orange, sousTexte = "Je prends mon repas, repas non pris") { ouvrir(Ecran.Repas) }
-    GrosBouton(Icons.Filled.FamilyRestroom, "Ma famille", Rouge, sousTexte = "Proches liés, messagerie chiffrée") { ouvrir(Ecran.Famille) }
-    GrosBouton(Icons.Filled.Nfc, "Test NFC (cartes vierges)", Bleu, sousTexte = "Écrire, lire, effacer : suivi pas à pas") { ouvrir(Ecran.LaboNfc) }
-    GrosBouton(Icons.Filled.Sensors, "Test balises Bluetooth", Vert, sousTexte = "Estimote, iBeacon, Eddystone en direct") { ouvrir(Ecran.Balises) }
-    GrosBouton(Icons.Filled.CellTower, "Récepteur de badges", Bleu, sousTexte = "Présence des visiteurs envoyée à SAWALI") { ouvrir(Ecran.Recepteur) }
-    GrosBouton(Icons.Filled.Place, "Où suis-je ?", Vert, sousTexte = "Page du lieu repéré par la balise la plus proche") { ouvrir(Ecran.OuSuisJe) }
-    GrosBouton(Icons.Filled.Tv, "Ma Télé", Vert, sousTexte = "Vidéos sur le téléviseur, pilotées depuis ce téléphone") { ouvrir(Ecran.Tele) }
-    GrosBouton(Icons.Filled.CalendarMonth, "Mon agenda", Bleu, sousTexte = "Google Agenda, rendez-vous par la voix") { ouvrir(Ecran.Agenda) }
-    GrosBouton(Icons.Filled.Straighten, "Mesurer une surface", Orange, sousTexte = "Avec la caméra : en direct ou sur photo") { ouvrir(Ecran.Mesure) }
-    GrosBouton(Icons.Filled.CloudUpload, "Sauvegarde en ligne", Vert, sousTexte = "Retrouver mes données après réinstallation") { ouvrir(Ecran.Sauvegarde) }
-    GrosBouton(Icons.Filled.Help, "Aide et à propos", Gris, sousTexte = "Réglages à faire, cochés automatiquement") { ouvrir(Ecran.Aide) }
-    GrosBouton(Icons.Filled.AccountCircle, "Mon profil", Orange, sousTexte = "Coordonnées, adresse, position") { ouvrir(Ecran.Profil) }
+    val c = androidx.compose.ui.platform.LocalContext.current
+    val portee = androidx.compose.runtime.rememberCoroutineScope()
+    var verification by remember { mutableStateOf(false) }
+
+    Rubrique("Application")
+    // Mises à jour : relit la version publiée dans ShuyahStore (toast « en cours » puis résultat, règle 17)
+    LigneOption(Icons.Outlined.SystemUpdate, "Mises à jour", "${Version.libelle()} · toucher pour vérifier dans ShuyahStore", etat = if (verification) "…" else null) {
+        if (!verification) {
+            verification = true
+            android.widget.Toast.makeText(c, "Vérification de la version en cours…", android.widget.Toast.LENGTH_SHORT).show()
+            portee.launch {
+                val n = MiseAJourStore.verifier(c, forcer = true)
+                verification = false
+                if (n == null) android.widget.Toast.makeText(c, "Vous avez la dernière version publiée (ou ShuyahStore est injoignable).", android.widget.Toast.LENGTH_LONG).show()
+                else { MiseAJourStore.ignorer(c, 0L); android.widget.Toast.makeText(c, "Version ${n.nom} disponible : ouverture de ShuyahStore.", android.widget.Toast.LENGTH_LONG).show(); MiseAJourStore.ouvrirStore(c) }
+            }
+        }
+    }
+    LigneOption(Icons.Outlined.AccountCircle, "Mon profil", "Coordonnées, adresse, position") { ouvrir(Ecran.Profil) }
+    LigneOption(Icons.Outlined.HelpOutline, "Aide et à propos", "Réglages à faire, cochés automatiquement") { ouvrir(Ecran.Aide) }
+    LigneOption(Icons.Outlined.CloudUpload, "Sauvegarde en ligne", "Retrouver mes données après réinstallation") { ouvrir(Ecran.Sauvegarde) }
+
+    Rubrique("Suivi et bilans")
+    LigneOption(Icons.Outlined.BarChart, "Bilans du personnel", "Présences, retards, paie du mois") { ouvrir(Ecran.Stats) }
+    LigneOption(Icons.Outlined.PieChart, "Statistiques du portefeuille", "Recettes, dépenses, catégories") { ouvrir(Ecran.BudgetStats) }
+
+    Rubrique("Famille et santé")
+    LigneOption(Icons.Outlined.FamilyRestroom, "Ma famille", "Proches liés, messagerie chiffrée") { ouvrir(Ecran.Famille) }
+    LigneOption(Icons.Outlined.Medication, "Médicaments", "Rappels, prises, partage avec la famille") { ouvrir(Ecran.Medicaments) }
+    LigneOption(Icons.Outlined.Restaurant, "Repas", "Je prends mon repas, repas non pris") { ouvrir(Ecran.Repas) }
+    LigneOption(Icons.Outlined.CalendarMonth, "Mon agenda", "Google Agenda, rendez-vous par la voix") { ouvrir(Ecran.Agenda) }
+    LigneOption(Icons.Outlined.Tv, "Ma Télé", "Vidéos sur le téléviseur, pilotées depuis ce téléphone") { ouvrir(Ecran.Tele) }
+
+    Rubrique("Outils")
+    LigneOption(Icons.Outlined.Straighten, "Mesurer une surface", "Avec la caméra : en direct ou sur photo") { ouvrir(Ecran.Mesure) }
+    LigneOption(Icons.Outlined.Nfc, "Test NFC (cartes vierges)", "Écrire, lire, effacer : suivi pas à pas") { ouvrir(Ecran.LaboNfc) }
+    LigneOption(Icons.Outlined.Sensors, "Test balises Bluetooth", "Estimote, iBeacon, Eddystone en direct") { ouvrir(Ecran.Balises) }
+    LigneOption(Icons.Outlined.CellTower, "Récepteur de badges", "Présence des visiteurs envoyée à SAWALI") { ouvrir(Ecran.Recepteur) }
+    LigneOption(Icons.Outlined.Place, "Où suis-je ?", "Page du lieu repéré par la balise la plus proche") { ouvrir(Ecran.OuSuisJe) }
 }

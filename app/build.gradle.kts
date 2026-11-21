@@ -17,8 +17,8 @@ android {
         minSdk = 26
         targetSdk = 35
         // Règle de version : VERSION +1 à chaque livraison (voir Version.kt).
-        versionCode = 57
-        versionName = "1.56"
+        versionCode = 58
+        versionName = "1.57"
         // Fichier brut : personnel-maison-<version>-release.apk, livré sous le nom personnel-maison-<version>.apk (sans « debug » ni « release »)
         setProperty("archivesBaseName", "personnel-maison-$versionName")
         // APK ALLÉGÉ (1.47) : seules les bibliothèques natives des TÉLÉPHONES sont gardées (ARM 64 bits et 32 bits). Les versions x86 / x86_64
@@ -96,4 +96,5 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")   // org.json réel pour les tests JVM (lecture de la réponse de ShuyahStore)
 }
