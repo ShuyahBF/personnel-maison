@@ -1,0 +1,6 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <!-- Pictogramme : une maison avec une personne devant -->
+    <path android:fillColor="#FFFFFF" android:pathData="M54,26 L84,52 L76,52 L76,80 L32,80 L32,52 L24,52 Z" />
+    <path android:fillColor="#F6A35B" android:pathData="M54,54 A6,6 0 1 0 54,66 A6,6 0 1 0 54,54 Z M44,80 L44,72 Q54,64 64,72 L64,80 Z" />
+</vector>
