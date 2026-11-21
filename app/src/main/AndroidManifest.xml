@@ -34,6 +34,7 @@
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-feature android:name="android.hardware.nfc" android:required="false" />
     <queries>
+        <package android:name="com.shuyah.store" />   <!-- v1.58 : bouton « Mettre à jour » = ouvre l'application ShuyahStore installée -->
         <!-- Android 11+ : voir le service de reconnaissance vocale installé (commande « pose ») -->
         <intent><action android:name="android.speech.RecognitionService" /></intent>
     </queries>
