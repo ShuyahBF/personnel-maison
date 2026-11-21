@@ -180,4 +180,43 @@ class MesureSurfaceTest {
         assertTrue(MesureSurface.coherenceDiagonale(48.0, 52.0).startsWith("Plus petit"))
         assertTrue(MesureSurface.coherenceDiagonale(58.0, 52.0).startsWith("Plus grand"))
     }
+
+    @Test fun objectif_se_range_en_texte_et_se_relit() {
+        val o = MesureSurface.Objectif(true, MesureSurface.Unite.MM, listOf(1.16, 0.67), 0.7772, 1.34)
+        val t = MesureSurface.objectifVersTexte(o)
+        val r = MesureSurface.texteVersObjectif(t)
+        assertTrue(r.verifier); assertEquals(MesureSurface.Unite.MM, r.unite); assertEquals(listOf(1.16, 0.67), r.dimensionsM)
+        assertEquals(0.7772, r.surfaceM2!!, 1e-6); assertEquals(1.34, r.diagonaleM!!, 1e-6)
+        assertFalse(MesureSurface.texteVersObjectif(MesureSurface.objectifVersTexte(MesureSurface.Objectif())).verifier)         // « Mesurer »
+        assertFalse(MesureSurface.texteVersObjectif("").verifier); assertFalse(MesureSurface.texteVersObjectif("n'importe quoi").verifier)
+        assertEquals(1.0, MesureSurface.lireSurface("1", MesureSurface.Unite.AUTO)!!, 1e-9)
+        assertEquals(0.01, MesureSurface.lireSurface("100", MesureSurface.Unite.CM)!!, 1e-9)         // 100 cm² = 0,01 m²
+        assertNull(MesureSurface.lireSurface("0", MesureSurface.Unite.MM))
+    }
+
+    @Test fun ecarts_mesure_moins_objectif_pour_un_rectangle() {
+        // Objectif : 1 160 × 670 mm ; mesuré (4 côtés) 1 172, 664, 1 168, 668 → grand 1 170, petit 666
+        val o = MesureSurface.Objectif(true, MesureSurface.Unite.MM, listOf(0.67, 1.16))              // saisis dans le désordre : le grand est apparié au grand
+        val l = MesureSurface.ecartsObjectif(o, listOf(1.172, 0.664, 1.168, 0.668), null)
+        assertEquals(2, l.size)
+        assertEquals("Grand côté", l[0].libelle); assertEquals(0.010, l[0].ecart.ecartM, 1e-9); assertEquals("Conforme", l[0].ecart.verdict)
+        assertEquals("Petit côté", l[1].libelle); assertEquals(-0.004, l[1].ecart.ecartM, 1e-9)
+        assertEquals("Grand côté : objectif 1 160 mm · mesuré 1 170 mm → +10,0 mm (+0,9 %) : Conforme", MesureSurface.texteLigneEcart(l[0], MesureSurface.Unite.MM))
+    }
+
+    @Test fun ecarts_longueur_unique_surface_et_diagonale() {
+        val o1 = MesureSurface.Objectif(true, MesureSurface.Unite.CM, listOf(1.40))
+        val l1 = MesureSurface.ecartsObjectif(o1, listOf(1.36), null)                                   // mètre ruban : 140 attendu, 136 mesuré
+        assertEquals("Longueur", l1[0].libelle); assertEquals(-0.04, l1[0].ecart.ecartM, 1e-9); assertEquals("À vérifier", l1[0].ecart.verdict)
+        assertEquals("Longueur : objectif 140,0 cm · mesuré 136,0 cm → −4,0 cm (−2,9 %) : À vérifier", MesureSurface.texteLigneEcart(l1[0], MesureSurface.Unite.CM))
+        val o2 = MesureSurface.Objectif(true, MesureSurface.Unite.AUTO, emptyList(), 12.0, null)
+        val l2 = MesureSurface.ecartsObjectif(o2, listOf(3.0, 4.0, 3.0, 4.0), 12.28)
+        assertEquals(1, l2.size); assertEquals("Surface", l2[0].libelle); assertEquals(0.28, l2[0].ecart.ecartM, 1e-9)
+        assertEquals("Surface : objectif 12,00 m² · mesuré 12,28 m² → +0,280 m² (+2,3 %) : Proche (dans la tolérance d'une mesure en réalité augmentée)", MesureSurface.texteLigneEcart(l2[0], MesureSurface.Unite.AUTO))
+        val o3 = MesureSurface.Objectif(true, MesureSurface.Unite.POUCES, emptyList(), null, 52 * MesureSurface.POUCE_M)
+        val l3 = MesureSurface.ecartsObjectif(o3, listOf(1.17, 0.666, 1.17, 0.666), null)
+        assertEquals("Diagonale", l3[0].libelle); assertEquals(53.0, l3[0].mesure / MesureSurface.POUCE_M, 0.1)
+        assertTrue(MesureSurface.ecartsObjectif(MesureSurface.Objectif(), listOf(1.0), 1.0).isEmpty())                // « Mesurer » : aucun écart
+        assertTrue(MesureSurface.ecartsObjectif(o1, emptyList(), null).isEmpty())                       // rien de mesuré
+    }
 }

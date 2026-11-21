@@ -337,4 +337,72 @@ object MesureSurface {
             else -> "Plus grand qu'un téléviseur de ${String.format(Locale.FRANCE, "%.0f", annoncePouces)} pouces : il s'agit peut-être d'un modèle plus grand, ou d'un cadre très large."
         }
     }
+
+    // =====================================================================================
+    // OBJECTIF d'une mesure (v1.55, propriétaire 21/11/2026 : « mesurer, vérifier… ; à la fin, les écarts : mesures − objectifs »)
+    // =====================================================================================
+
+    /**
+     * Ce que l'on veut faire de la mesure : la MESURER simplement, ou VÉRIFIER des valeurs attendues (dimensions, surface, diagonale), saisies dans l'unité choisie
+     * et gardées en mètres. À la fin, chaque valeur attendue est comparée à ce qui a été mesuré.
+     */
+    data class Objectif(val verifier: Boolean = false, val unite: Unite = Unite.AUTO, val dimensionsM: List<Double> = emptyList(), val surfaceM2: Double? = null, val diagonaleM: Double? = null) {
+        val aDesValeurs: Boolean get() = verifier && (dimensionsM.isNotEmpty() || surfaceM2 != null || diagonaleM != null)
+    }
+
+    /** « M » (mesurer) ou « V|UNITÉ|d1;d2|surface|diagonale » (vérifier), pour l'enregistrement avec la mesure. */
+    fun objectifVersTexte(o: Objectif): String =
+        if (!o.verifier) "M" else "V|${o.unite.name}|${nombresVersTexte(o.dimensionsM)}|${o.surfaceM2?.let { String.format(Locale.US, "%.6f", it) } ?: ""}|${o.diagonaleM?.let { String.format(Locale.US, "%.4f", it) } ?: ""}"
+
+    fun texteVersObjectif(texte: String): Objectif {
+        val p = texte.split("|")
+        if (p.firstOrNull() != "V" || p.size < 5) return Objectif()
+        return Objectif(true, uniteDepuisNom(p[1]), texteVersNombres(p[2]), p[3].toDoubleOrNull(), p[4].toDoubleOrNull())
+    }
+
+    /** Surface saisie dans l'unité choisie (m² en Automatique, mm², cm², po²) rendue en m² ; null si ce n'est pas un nombre positif. */
+    fun lireSurface(texte: String, u: Unite): Double? {
+        val v = texte.trim().replace(',', '.').toDoubleOrNull() ?: return null
+        if (v <= 0.0) return null
+        return if (u == Unite.AUTO) v else v * u.enMetres * u.enMetres
+    }
+
+    /** Une ligne du bilan : libellé, valeur attendue, valeur mesurée (mètres, ou m² si `surface`) et écart = mesuré − attendu. */
+    data class LigneEcart(val libelle: String, val objectif: Double, val mesure: Double, val ecart: Ecart, val surface: Boolean)
+
+    /**
+     * Bilan « mesuré − objectif ». Les dimensions attendues (de la plus grande à la plus petite) sont associées chacune au côté mesuré le plus proche ; pour un contour de 4 points
+     * on compare au GRAND et au PETIT côté du rectangle (moyennes des côtés opposés). La surface se compare à la surface mesurée, la diagonale à celle du rectangle de 4 points.
+     */
+    fun ecartsObjectif(o: Objectif, cotes: List<Double>, aireM2: Double?): List<LigneEcart> {
+        if (!o.aDesValeurs) return emptyList()
+        val lignes = ArrayList<LigneEcart>()
+        val rect = rectangleDesCotes(cotes)
+        val candidats: MutableList<Pair<String, Double>> = when {
+            rect != null -> mutableListOf("Grand côté" to rect.grand, "Petit côté" to rect.petit)
+            cotes.size == 1 -> mutableListOf("Longueur" to cotes[0])
+            else -> cotes.mapIndexed { i, c -> "Côté ${i + 1}" to c }.toMutableList()
+        }
+        for (attendue in o.dimensionsM.sortedDescending()) {
+            val proche = candidats.minByOrNull { abs(it.second - attendue) } ?: break
+            candidats.remove(proche)
+            lignes += LigneEcart(proche.first, attendue, proche.second, comparer(attendue, proche.second), false)
+        }
+        if (o.surfaceM2 != null && aireM2 != null) lignes += LigneEcart("Surface", o.surfaceM2, aireM2, comparer(o.surfaceM2, aireM2), true)
+        if (o.diagonaleM != null && rect != null) lignes += LigneEcart("Diagonale", o.diagonaleM, rect.diagonale, comparer(o.diagonaleM, rect.diagonale), false)
+        return lignes
+    }
+
+    /** Écart de surface signé dans l'unité de surface choisie : « +0,012 m² (+1,5 %) ». */
+    fun texteEcartAire(e: Ecart, u: Unite): String {
+        val (valeur, sym) = when (u) {
+            Unite.AUTO -> e.ecartM to "m²"; Unite.MM -> e.ecartM * 1_000_000 to "mm²"; Unite.CM -> e.ecartM * 10_000 to "cm²"; Unite.POUCES -> e.ecartM / (POUCE_M * POUCE_M) to "po²"
+        }
+        return String.format(Locale.FRANCE, if (u == Unite.AUTO) "%+.3f %s (%+.1f %%)" else "%+.1f %s (%+.1f %%)", valeur, sym, e.pourcent).replace('-', '−')
+    }
+
+    /** Ligne du bilan, prête à afficher : « Grand côté : objectif 1 160 mm · mesuré 1 170 mm → +10,0 mm (+0,9 %) : Conforme ». */
+    fun texteLigneEcart(l: LigneEcart, u: Unite): String =
+        if (l.surface) "${l.libelle} : objectif ${texteAireUnite(l.objectif, u)} · mesuré ${texteAireUnite(l.mesure, u)} → ${texteEcartAire(l.ecart, u)} : ${l.ecart.verdict}"
+        else "${l.libelle} : objectif ${texteLongueurUnite(l.objectif, u)} · mesuré ${texteLongueurUnite(l.mesure, u)} → ${texteEcart(l.ecart, u)} : ${l.ecart.verdict}"
 }
