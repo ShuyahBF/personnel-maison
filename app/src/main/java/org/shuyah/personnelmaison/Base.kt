@@ -238,7 +238,8 @@ data class MesureEnregistree(
     val aire: Double?,
     val perimetre: Double?,
     val facteur: Double,
-    val creeLe: Long
+    val creeLe: Long,
+    val objectif: String = ""     // objectif de la mesure (1.55) : « M » (mesurer) ou « V|unité|dimensions|surface|diagonale » (vérifier)
 )
 
 /** Une prise prévue d'un médicament à une heure donnée : ATTENTE (rappel envoyé), PRIS, OUBLIE (non confirmée après 30 minutes). Une seule ligne par médicament et par heure prévue. */
@@ -416,7 +417,7 @@ interface DaoMaison {
 /** Résultat de « nombre de pièces par opération » (affiche l'icône de pièce dans la liste). */
 data class NombrePieces(val operationId: Long, val n: Int)
 
-@Database(entities = [Societe::class, Personnel::class, Pointage::class, NotePerso::class, Evaluation::class, JournalPointage::class, HorairePersonnel::class, NumeroTel::class, Paiement::class, Tache::class, DocumentSociete::class, ProfilUtilisateur::class, Operation::class, LigneOperation::class, PieceOperation::class, Medicament::class, PriseMedicament::class, Versement::class, MesureEnregistree::class], version = 9, exportSchema = true)
+@Database(entities = [Societe::class, Personnel::class, Pointage::class, NotePerso::class, Evaluation::class, JournalPointage::class, HorairePersonnel::class, NumeroTel::class, Paiement::class, Tache::class, DocumentSociete::class, ProfilUtilisateur::class, Operation::class, LigneOperation::class, PieceOperation::class, Medicament::class, PriseMedicament::class, Versement::class, MesureEnregistree::class], version = 10, exportSchema = true)
 abstract class BaseDonnees : RoomDatabase() { abstract fun dao(): DaoMaison }
 
 /**
@@ -507,6 +508,13 @@ val MIGRATION_8_9 = object : androidx.room.migration.Migration(8, 9) {
     }
 }
 
+/** Migration 9 → 10 : objectif de la mesure (mesurer, vérifier des valeurs). Les mesures existantes sont conservées (objectif vide). */
+val MIGRATION_9_10 = object : androidx.room.migration.Migration(9, 10) {
+    override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `mesures_enregistrees` ADD COLUMN `objectif` TEXT NOT NULL DEFAULT ''")
+    }
+}
+
 object Base {
     private var instance: BaseDonnees? = null
     const val NOM_FICHIER = "personnel_maison.db"
@@ -566,6 +574,6 @@ object Base {
             prefs.edit().putString("cle_base", cle).apply()
         }
         return Room.databaseBuilder(c, BaseDonnees::class.java, NOM_FICHIER)
-            .openHelperFactory(SupportFactory(SQLiteDatabase.getBytes(cle.toCharArray()))).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9).build()
+            .openHelperFactory(SupportFactory(SQLiteDatabase.getBytes(cle.toCharArray()))).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10).build()
     }
 }
