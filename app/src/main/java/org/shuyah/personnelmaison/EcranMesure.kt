@@ -25,6 +25,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.Icon
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -53,7 +54,13 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import org.shuyah.personnelmaison.MesureSurface.P2
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import kotlinx.coroutines.launch
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * MESURER UNE SURFACE AVEC LA CAMÉRA (v1.45, propriétaire 19/11/2026 : « la mesure de surfaces […] à partir de la caméra du téléphone »).
@@ -68,9 +75,18 @@ fun EcranMesure(retour: () -> Unit) {
     when (mode) {
         "direct" -> MesureEnDirect(retour = { mode = "" }, versPhoto = { mode = "photo" })
         "photo" -> MesureSurPhoto(retour = { mode = "" })
+        "mesures" -> MesuresEnregistrees(retour = { mode = "" })
         else -> ChoixMesure(retour) { mode = it }
     }
 }
+
+// =====================================================================================
+// Étalonnage (v1.51) : facteur de correction gardé sur le téléphone
+// =====================================================================================
+
+/** Facteur d'étalonnage enregistré (1,0 = aucun). Gardé dans les préférences de l'application : il corrige TOUTES les mesures en direct suivantes. */
+private fun lireFacteur(c: Context): Double = c.getSharedPreferences("mesure", Context.MODE_PRIVATE).getFloat("facteur", 1f).toDouble().takeIf { it in MesureSurface.FACTEUR_MIN..MesureSurface.FACTEUR_MAX } ?: 1.0
+private fun ecrireFacteur(c: Context, f: Double) { c.getSharedPreferences("mesure", Context.MODE_PRIVATE).edit().putFloat("facteur", f.toFloat()).apply() }
 
 /** Copie un résultat dans le presse-papiers, avec un message de confirmation (jamais d'action silencieuse). */
 private fun copier(c: Context, texte: String) {
@@ -89,11 +105,12 @@ private fun ChoixMesure(retour: () -> Unit, choisir: (String) -> Unit) {
     Page("Mesurer une surface", retour) {
         Carte("Deux façons de mesurer", Icons.Filled.Straighten) {
             Text("En direct : vous visez le sol ou le mur et posez les coins un à un. Sur photo : vous photographiez la surface avec une feuille A4 posée dessus.", color = BleuNuit, fontSize = 15.sp)
-            Text("Précision habituelle : quelques centimètres par mètre. Pour un devis ou un achat important, vérifiez au mètre ruban.", color = Gris, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
+            Text("Précision habituelle : 1 à 3 % (quelques centimètres par mètre). Pour corriger l'écart de votre téléphone, mesurez un mètre ruban en direct puis touchez « Étalonner ». Pour un devis ou un achat important, vérifiez au mètre ruban.", color = Gris, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
         }
         GrosBouton(Icons.Filled.ViewInAr, "Mesure en direct", Bleu, actif = compatible != false,
             sousTexte = if (compatible == false) "Téléphone non compatible (Google ARCore)" else "Réalité augmentée : visez, posez les points") { choisir("direct") }
         GrosBouton(Icons.Filled.PhotoCamera, "Mesure sur photo", Vert, sousTexte = "Avec une feuille A4 ou un carreau comme repère") { choisir("photo") }
+        GrosBouton(Icons.Filled.Bookmarks, "Mes mesures enregistrées", Orange, sousTexte = "Table basse du salon, etc. : nom, note et points") { choisir("mesures") }
     }
 }
 
@@ -155,10 +172,13 @@ private fun MesureEnDirect(retour: () -> Unit, versPhoto: () -> Unit) {
         onDispose { cycle.lifecycle.removeObserver(observateur); ar.surEtat = {}; ar.fermer() }
     }
 
+    // Étalonnage (v1.51) : facteur gardé sur le téléphone ; toutes les longueurs affichées le suivent, les surfaces suivent son carré
+    var facteur by remember { mutableStateOf(lireFacteur(c)) }
+    var dialogue by remember { mutableStateOf("") }                      // "", "etalonner", "enregistrer"
     val points = etat.points
-    val aire = if (points.size >= 3) MesureSurface.aireEspace(points) else null
-    val perimetre = if (points.size >= 2) MesureSurface.perimetreEspace(points, ferme = points.size >= 3) else null
-    val prochain = if (points.isNotEmpty() && etat.reticule != null) MesureSurface.distance(points.last(), etat.reticule!!) else null
+    val aire = if (points.size >= 3) MesureSurface.aireEtalonnee(MesureSurface.aireEspace(points), facteur) else null
+    val perimetre = if (points.size >= 2) MesureSurface.longueurEtalonnee(MesureSurface.perimetreEspace(points, ferme = points.size >= 3), facteur) else null
+    val prochain = if (points.isNotEmpty() && etat.reticule != null) MesureSurface.longueurEtalonnee(MesureSurface.distance(points.last(), etat.reticule!!), facteur) else null
 
     Column(Modifier.fillMaxSize()) {
         Titre("Mesure en direct", retour)
@@ -189,7 +209,7 @@ private fun MesureEnDirect(retour: () -> Unit, versPhoto: () -> Unit) {
                     val fermeture = j == 0
                     if (ecran.size >= 2 && (!fermeture || ecran.size >= 3)) ecran[j]?.let { b ->
                         drawLine(if (fermeture) Color.White.copy(alpha = 0.7f) else Orange, Offset(a.x.toFloat(), a.y.toFloat()), Offset(b.x.toFloat(), b.y.toFloat()), strokeWidth = 3.dp.toPx())
-                        etiquette(MesureSurface.texteLongueur(MesureSurface.distance(points[i], points[j])), ((a.x + b.x) / 2).toFloat(), ((a.y + b.y) / 2).toFloat(), texte)
+                        etiquette(MesureSurface.texteLongueur(MesureSurface.longueurEtalonnee(MesureSurface.distance(points[i], points[j]), facteur)), ((a.x + b.x) / 2).toFloat(), ((a.y + b.y) / 2).toFloat(), texte)
                     }
                 }
                 ecran.forEachIndexed { i, p -> if (p != null) { drawCircle(Color.White, 9.dp.toPx(), Offset(p.x.toFloat(), p.y.toFloat())); drawCircle(if (i == 0) Vert else Orange, 6.dp.toPx(), Offset(p.x.toFloat(), p.y.toFloat())) } }
@@ -209,7 +229,7 @@ private fun MesureEnDirect(retour: () -> Unit, versPhoto: () -> Unit) {
                     points.isEmpty() -> "Visez un coin de la surface puis appuyez sur « Poser un point »."
                     points.size < 3 -> "${points.size} point(s) posé(s) : il en faut au moins 3 pour une surface."
                     else -> "${points.size} points. Ajoutez les autres coins dans l'ordre du tour."
-                })
+                } + if (facteur != 1.0) " · Étalonné ${MesureSurface.textePourcentage(facteur)}" else "")
                 if (etat.message.isNotBlank()) Text(etat.message, color = Color.White, fontSize = 14.sp,
                     modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(Color(0xCCD64545)).padding(horizontal = 10.dp, vertical = 6.dp))
             }
@@ -222,8 +242,144 @@ private fun MesureEnDirect(retour: () -> Unit, versPhoto: () -> Unit) {
             Tuile(Icons.Filled.ContentCopy, "Copier", Bleu, actif = perimetre != null) {
                 copier(c, listOfNotNull(aire?.let { "Surface : ${MesureSurface.texteAire(it)}" }, perimetre?.let { "Périmètre : ${MesureSurface.texteLongueur(it)}" }).joinToString(" · "))
             }
+            Tuile(Icons.Filled.Straighten, "Étalonner", Bleu, actif = points.size >= 2 || facteur != 1.0) { dialogue = "etalonner" }
+            Tuile(Icons.Filled.BookmarkAdd, "Enregistrer", Vert, actif = points.size >= 2) { dialogue = "enregistrer" }
         }
     }
+    if (dialogue == "etalonner") DialogueEtalonnage(points, facteur, surFacteur = { facteur = it; ecrireFacteur(c, it) }, fermer = { dialogue = "" })
+    if (dialogue == "enregistrer") DialogueEnregistrer(
+        titre = "Enregistrer cette mesure", resume = listOfNotNull(aire?.let { "Surface : ${MesureSurface.texteAire(it)}" }, perimetre?.let { "Périmètre : ${MesureSurface.texteLongueur(it)}" }).joinToString(" · "),
+        nombrePoints = points.size, fermer = { dialogue = "" }) { nom, note ->
+        val ferme = points.size >= 3
+        Enregistrement.ajouter(c, MesureEnregistree(nom = nom, note = note, type = "direct", points = MesureSurface.pointsVersTexte(points),
+            cotes = MesureSurface.nombresVersTexte(MesureSurface.cotesEspace(points, ferme).map { MesureSurface.longueurEtalonnee(it, facteur) }),
+            aire = aire, perimetre = perimetre, facteur = facteur, creeLe = System.currentTimeMillis()))
+        dialogue = ""
+    }
+}
+
+// =====================================================================================
+// Étalonnage et enregistrement : fenêtres
+// =====================================================================================
+
+/** Accès à la base pour les mesures enregistrées (le toast confirme toujours : jamais d'enregistrement silencieux). */
+private object Enregistrement {
+    fun ajouter(c: Context, m: MesureEnregistree) {
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            Base.dao(c).ajouterMesure(m)
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { Toast.makeText(c, "Mesure « ${m.nom} » enregistrée (Mes mesures enregistrées).", Toast.LENGTH_LONG).show() }
+        }
+    }
+}
+
+/**
+ * ÉTALONNAGE : on pose 2 points aux deux bouts d'une longueur CONNUE (un mètre ruban ouvert à 140 cm…), on saisit la vraie longueur, et l'application
+ * garde le facteur de correction (vraie longueur ÷ longueur mesurée). Utilise les 2 DERNIERS points posés.
+ */
+@Composable
+private fun DialogueEtalonnage(points: List<MesureSurface.P3>, facteur: Double, surFacteur: (Double) -> Unit, fermer: () -> Unit) {
+    val c = LocalContext.current
+    var cm by remember { mutableStateOf("") }
+    val brute = if (points.size >= 2) MesureSurface.distance(points[points.size - 2], points.last()) else null
+    AlertDialog(onDismissRequest = fermer, title = { Text("Étalonner la mesure") },
+        text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (brute != null) {
+                Text("Les 2 derniers points mesurent ${MesureSurface.texteLongueur(brute)} (sans correction).", color = BleuNuit, fontSize = 15.sp)
+                Champ("Vraie longueur entre ces 2 points (cm)", cm, { cm = it }, KeyboardType.Decimal)
+                Text("Posez les 2 points aux deux extrémités d'une longueur connue (mètre ruban ouvert à 100 ou 140 cm), puis saisissez cette longueur. Toutes les mesures suivantes seront corrigées.", color = Gris, fontSize = 13.sp)
+            } else Text("Posez d'abord 2 points aux deux extrémités d'une longueur connue (mètre ruban).", color = BleuNuit, fontSize = 15.sp)
+            if (facteur != 1.0) Text("Étalonnage actuel : ${MesureSurface.textePourcentage(facteur)}.", color = Gris, fontSize = 13.sp)
+        } },
+        confirmButton = { if (brute != null) Tuile(Icons.Filled.Check, "Étalonner", Vert, actif = MesureSurface.lireCentimetres(cm) != null) {
+            val reelle = MesureSurface.lireCentimetres(cm)
+            val f = reelle?.let { MesureSurface.facteurEtalonnage(it, brute) }
+            if (f == null) Toast.makeText(c, "Étalonnage refusé : l'écart dépasse 15 %. Vérifiez la longueur saisie et la position des 2 points.", Toast.LENGTH_LONG).show()
+            else { surFacteur(f); Toast.makeText(c, "Étalonnage enregistré : ${MesureSurface.textePourcentage(f)}.", Toast.LENGTH_LONG).show(); fermer() }
+        } },
+        dismissButton = { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (facteur != 1.0) Tuile(Icons.Filled.RestartAlt, "Retirer", Rouge) { surFacteur(1.0); Toast.makeText(c, "Étalonnage retiré.", Toast.LENGTH_SHORT).show(); fermer() }
+            Tuile(Icons.Filled.Close, "Fermer", Orange) { fermer() }
+        } })
+}
+
+/** Fenêtre « Enregistrer cette mesure » : un nom (obligatoire) et une note ; au moins 2 points. */
+@Composable
+private fun DialogueEnregistrer(titre: String, resume: String, nombrePoints: Int, fermer: () -> Unit, enregistrer: (String, String) -> Unit) {
+    var nom by remember { mutableStateOf("") }
+    var note by remember { mutableStateOf("") }
+    AlertDialog(onDismissRequest = fermer, title = { Text(titre) },
+        text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("$nombrePoints points${if (resume.isNotBlank()) " · $resume" else ""}", color = BleuNuit, fontSize = 15.sp)
+            Champ("Nom (ex. Table basse du salon)", nom, { nom = it })
+            Champ("Note (facultative)", note, { note = it }, lignes = 3)
+            if (nom.isNotBlank()) Text("Modifié, non enregistré : touchez « Enregistrer ».", color = Orange, fontSize = 12.sp)
+        } },
+        confirmButton = { Tuile(Icons.Filled.Save, "Enregistrer", Vert, actif = nom.isNotBlank()) { enregistrer(nom.trim(), note.trim()) } },
+        dismissButton = { Tuile(Icons.Filled.Close, "Annuler", Orange) { fermer() } })
+}
+
+// =====================================================================================
+// Mes mesures enregistrées
+// =====================================================================================
+
+@Composable
+private fun MesuresEnregistrees(retour: () -> Unit) {
+    val c = LocalContext.current
+    val dao = remember { Base.dao(c) }
+    val scope = rememberCoroutineScope()
+    val liste by dao.mesuresEnregistrees().collectAsState(emptyList())
+    var ouverte by remember { mutableStateOf<MesureEnregistree?>(null) }
+    var aSupprimer by remember { mutableStateOf<MesureEnregistree?>(null) }
+    val date = remember { SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.FRANCE) }
+    Page("Mes mesures enregistrées", retour) {
+        if (liste.isEmpty()) Carte("Aucune mesure enregistrée", Icons.Filled.Bookmarks) {
+            Text("Faites une mesure en direct (2 points au moins : une longueur ; 3 points et plus : une surface), puis touchez « Enregistrer » : donnez-lui un nom (« Table basse du salon ») et une note.", color = Gris, fontSize = 14.sp)
+        }
+        liste.forEach { m ->
+            Carte(m.nom, Icons.Filled.Straighten) {
+                val points = MesureSurface.texteVersPoints(m.points)
+                Text(listOfNotNull(m.aire?.let { "Surface : ${MesureSurface.texteAire(it)}" }, m.perimetre?.let { "Périmètre : ${MesureSurface.texteLongueur(it)}" },
+                    if (m.aire == null) MesureSurface.texteVersNombres(m.cotes).firstOrNull()?.let { "Longueur : ${MesureSurface.texteLongueur(it)}" } else null).joinToString(" · "), color = BleuNuit, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                Text("${if (m.type == "direct") "En direct" else "Sur photo"} · ${points.size.takeIf { it > 0 } ?: MesureSurface.texteVersNombres(m.cotes).size} points/côtés · ${date.format(Date(m.creeLe))}", color = Gris, fontSize = 13.sp)
+                if (m.note.isNotBlank()) Text(m.note, color = BleuNuit, fontSize = 14.sp)
+                RangeeTuiles {
+                    Tuile(Icons.Filled.Visibility, "Détail", Bleu) { ouverte = m }
+                    Tuile(Icons.Filled.ContentCopy, "Copier", Bleu) { copier(c, "${m.nom} : " + listOfNotNull(m.aire?.let { "Surface ${MesureSurface.texteAire(it)}" }, m.perimetre?.let { "Périmètre ${MesureSurface.texteLongueur(it)}" }).joinToString(" · ").ifBlank { MesureSurface.texteVersNombres(m.cotes).firstOrNull()?.let { MesureSurface.texteLongueur(it) } ?: "" }) }
+                    Tuile(Icons.Filled.Delete, "Supprimer", Rouge) { aSupprimer = m }
+                }
+            }
+        }
+    }
+    ouverte?.let { m -> DetailMesure(m, fermer = { ouverte = null }) { nom, note -> scope.launch { dao.modifierMesure(m.id, nom, note) }; Toast.makeText(c, "Mesure modifiée.", Toast.LENGTH_SHORT).show(); ouverte = null } }
+    aSupprimer?.let { m -> Confirmation("Supprimer cette mesure ?", "« ${m.nom} » sera supprimée définitivement.", { scope.launch { dao.supprimerMesure(m.id) }; Toast.makeText(c, "Mesure supprimée.", Toast.LENGTH_SHORT).show(); aSupprimer = null }, { aSupprimer = null }) }
+}
+
+/** Détail d'une mesure enregistrée : nom et note modifiables, côtés, et coordonnées des points (en cm depuis le premier point). */
+@Composable
+private fun DetailMesure(m: MesureEnregistree, fermer: () -> Unit, enregistrer: (String, String) -> Unit) {
+    var nom by remember { mutableStateOf(m.nom) }
+    var note by remember { mutableStateOf(m.note) }
+    val points = MesureSurface.texteVersPoints(m.points)
+    val cotes = MesureSurface.texteVersNombres(m.cotes)
+    val modifie = nom != m.nom || note != m.note
+    AlertDialog(onDismissRequest = fermer, title = { Text("Mesure enregistrée") },
+        text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Champ("Nom", nom, { nom = it })
+            Champ("Note", note, { note = it }, lignes = 3)
+            if (modifie) Text("Modifié, non enregistré : touchez « Enregistrer ».", color = Orange, fontSize = 12.sp)
+            m.aire?.let { Text("Surface : ${MesureSurface.texteAire(it)}", color = BleuNuit, fontSize = 16.sp, fontWeight = FontWeight.Bold) }
+            m.perimetre?.let { Text("Périmètre : ${MesureSurface.texteLongueur(it)}", color = BleuNuit, fontSize = 15.sp) }
+            if (m.facteur != 1.0) Text("Étalonnage appliqué : ${MesureSurface.textePourcentage(m.facteur)}", color = Gris, fontSize = 13.sp)
+            Text("Côtés", fontWeight = FontWeight.Bold, color = BleuNuit)
+            cotes.forEachIndexed { i, l -> Text(if (cotes.size == 1) "Longueur : ${MesureSurface.texteLongueur(l)}" else "Côté ${i + 1} : ${MesureSurface.texteLongueur(l)}", fontSize = 14.sp) }
+            if (points.isNotEmpty()) {
+                Text("Points (en cm, par rapport au point 1)", fontWeight = FontWeight.Bold, color = BleuNuit)
+                points.forEachIndexed { i, p -> val o = points[0]
+                    Text("Point ${i + 1} : x ${"%.1f".format(Locale.FRANCE, (p.x - o.x) * 100)} · y ${"%.1f".format(Locale.FRANCE, (p.y - o.y) * 100)} · z ${"%.1f".format(Locale.FRANCE, (p.z - o.z) * 100)}", fontSize = 13.sp, color = Gris) }
+            }
+        } },
+        confirmButton = { Tuile(Icons.Filled.Save, "Enregistrer", Vert, actif = modifie && nom.isNotBlank()) { enregistrer(nom.trim(), note.trim()) } },
+        dismissButton = { Tuile(Icons.Filled.Close, "Fermer", Orange) { fermer() } })
 }
 
 // =====================================================================================
@@ -270,6 +426,7 @@ private fun MesureSurPhoto(retour: () -> Unit) {
     val reference = if (nomReference == AUTRE) MesureSurface.referenceLibre(cm1, cm2) else MesureSurface.REFERENCES.firstOrNull { it.nom == nomReference }
     val resultat = if (reference != null && coins.size == 4 && contour.size >= 2) MesureSurface.mesurerSurPhoto(coins.toList(), reference, contour.toList(), tourner) else null
     val etape = when { photo == null -> 0; coins.size < 4 -> 1; else -> 2 }
+    var enregistrerOuvert by remember { mutableStateOf(false) }
 
     Page("Mesure sur photo", retour) {
         Carte("Le repère de taille connue", Icons.Filled.CropPortrait) {
@@ -292,6 +449,15 @@ private fun MesureSurPhoto(retour: () -> Unit) {
             Tuile(Icons.Filled.ContentCopy, "Copier", Bleu, actif = resultat != null) {
                 resultat?.let { r -> copier(c, if (contour.size >= 3) "Surface : ${MesureSurface.texteAire(r.aire)} · Périmètre : ${MesureSurface.texteLongueur(r.perimetre)}" else "Longueur : ${MesureSurface.texteLongueur(r.cotes.first())}") }
             }
+            Tuile(Icons.Filled.BookmarkAdd, "Enregistrer", Vert, actif = resultat != null) { enregistrerOuvert = true }
+        }
+        if (enregistrerOuvert && resultat != null) DialogueEnregistrer("Enregistrer cette mesure",
+            if (contour.size >= 3) "Surface : ${MesureSurface.texteAire(resultat.aire)} · Périmètre : ${MesureSurface.texteLongueur(resultat.perimetre)}" else "Longueur : ${MesureSurface.texteLongueur(resultat.cotes.first())}",
+            contour.size, fermer = { enregistrerOuvert = false }) { nom, note ->
+            // Sur photo, les points sont des pixels : on garde les côtés (mètres) calculés avec le repère, pas les pixels
+            Enregistrement.ajouter(c, MesureEnregistree(nom = nom, note = note, type = "photo", points = "", cotes = MesureSurface.nombresVersTexte(resultat.cotes),
+                aire = if (contour.size >= 3) resultat.aire else null, perimetre = if (contour.size >= 3) resultat.perimetre else null, facteur = 1.0, creeLe = System.currentTimeMillis()))
+            enregistrerOuvert = false
         }
         // Consigne de l'étape en cours (une seule chose à faire à la fois)
         Text(when (etape) {

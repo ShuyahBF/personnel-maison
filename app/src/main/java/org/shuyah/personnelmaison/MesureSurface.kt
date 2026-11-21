@@ -210,4 +210,49 @@ object MesureSurface {
         val a = lireCentimetres(cm1) ?: return null; val b = lireCentimetres(cm2) ?: return null
         return Reference("Autre", minOf(a, b), maxOf(a, b))
     }
+
+    // =====================================================================================
+    // Étalonnage et enregistrement (v1.51, constat du propriétaire du 21/11/2026 : mètre ruban à 140 cm, mesure en direct à 136 cm)
+    // =====================================================================================
+
+    /** Facteur d'étalonnage limité à ±15 % : au-delà, la mesure d'étalonnage est forcément fausse (mauvais points, mauvaise saisie). */
+    const val FACTEUR_MIN = 0.85
+    const val FACTEUR_MAX = 1.15
+
+    /**
+     * Facteur d'ÉTALONNAGE : vraie longueur ÷ longueur mesurée par le téléphone (ex. 140 cm réels pour 136 cm mesurés → 1,029).
+     * Toutes les longueurs affichées sont ensuite multipliées par ce facteur, et les surfaces par son carré. Null si une longueur est invalide
+     * ou si le facteur sort de ±15 %.
+     */
+    fun facteurEtalonnage(reelleM: Double, mesureeM: Double): Double? {
+        if (reelleM <= 0.0 || mesureeM <= 0.0 || reelleM.isNaN() || mesureeM.isNaN()) return null
+        val f = reelleM / mesureeM
+        return if (f in FACTEUR_MIN..FACTEUR_MAX) f else null
+    }
+
+    fun longueurEtalonnee(m: Double, facteur: Double): Double = m * facteur
+    fun aireEtalonnee(m2: Double, facteur: Double): Double = m2 * facteur * facteur
+
+    /** « +2,9 % » ou « −3,1 % » : écart d'un facteur par rapport à 1. */
+    fun textePourcentage(facteur: Double): String = String.format(Locale.FRANCE, "%+.1f %%", (facteur - 1.0) * 100).replace('-', '−')
+
+    /** Côtés d'un contour de l'espace : de chaque point au suivant ; `ferme` ajoute le côté qui revient au premier point (3 points et plus). Longueurs BRUTES (mètres). */
+    fun cotesEspace(points: List<P3>, ferme: Boolean): List<Double> {
+        if (points.size < 2) return emptyList()
+        val l = (0 until points.size - 1).map { distance(points[it], points[it + 1]) }
+        return if (ferme && points.size > 2) l + distance(points.last(), points.first()) else l
+    }
+
+    /** Points de l'espace en texte « x,y,z;x,y,z » (mètres, 4 décimales) pour l'enregistrement ; format indépendant de la langue du téléphone. */
+    fun pointsVersTexte(points: List<P3>): String = points.joinToString(";") { String.format(Locale.US, "%.4f,%.4f,%.4f", it.x, it.y, it.z) }
+
+    /** Relit `pointsVersTexte` ; les morceaux illisibles sont ignorés. */
+    fun texteVersPoints(texte: String): List<P3> = texte.split(";").mapNotNull { m ->
+        val v = m.split(",").mapNotNull { it.trim().toDoubleOrNull() }
+        if (v.size == 3) P3(v[0], v[1], v[2]) else null
+    }
+
+    /** Liste de longueurs (mètres) en texte « 0.8500;1.2000 » et retour. */
+    fun nombresVersTexte(v: List<Double>): String = v.joinToString(";") { String.format(Locale.US, "%.4f", it) }
+    fun texteVersNombres(texte: String): List<Double> = texte.split(";").mapNotNull { it.trim().toDoubleOrNull() }
 }

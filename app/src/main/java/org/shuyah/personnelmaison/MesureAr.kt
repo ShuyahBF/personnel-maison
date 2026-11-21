@@ -96,6 +96,8 @@ class MesureAr(private val activite: Activity) : GLSurfaceView.Renderer {
                     planeFindingMode = Config.PlaneFindingMode.HORIZONTAL_AND_VERTICAL    // sols ET murs
                     focusMode = Config.FocusMode.AUTO
                     updateMode = Config.UpdateMode.LATEST_CAMERA_IMAGE
+                    // v1.51 : si le téléphone sait estimer la PROFONDEUR (Depth API), les points visés sont plus justes qu'avec les seuls plans (constat : 136 cm mesurés pour 140 cm réels)
+                    if (s.isDepthModeSupported(Config.DepthMode.AUTOMATIC)) depthMode = Config.DepthMode.AUTOMATIC
                 })
                 session = s
             }
@@ -198,6 +200,7 @@ class MesureAr(private val activite: Activity) : GLSurfaceView.Renderer {
             if (suivi) {
                 val touches = image.hitTest(largeur / 2f, hauteur / 2f)
                 vise = touches.firstOrNull { val t = it.trackable; t is Plane && t.trackingState == TrackingState.TRACKING && t.isPoseInPolygon(it.hitPose) }
+                    ?: touches.firstOrNull { it.trackable is com.google.ar.core.DepthPoint }
                     ?: touches.firstOrNull { val t = it.trackable; t is Point && t.orientationMode == Point.OrientationMode.ESTIMATED_SURFACE_NORMAL }
             }
             if (poseDemandee) {
