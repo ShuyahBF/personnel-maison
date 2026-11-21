@@ -109,4 +109,35 @@ class MesureSurfaceTest {
         assertEquals(0.4, r.petit, 1e-9); assertEquals(0.8, r.grand, 1e-9)
         assertNull(MesureSurface.referenceLibre("80", ""))
     }
+
+    @Test fun etalonnage_corrige_les_longueurs_et_les_surfaces() {
+        // Constat du 21/11/2026 : 140 cm au mètre ruban, 136 cm mesurés par le téléphone
+        val f = MesureSurface.facteurEtalonnage(1.40, 1.36)!!
+        assertEquals(1.0294, f, 1e-4)
+        assertEquals(1.40, MesureSurface.longueurEtalonnee(1.36, f), 1e-9)
+        assertEquals(4.0 * f * f, MesureSurface.aireEtalonnee(4.0, f), 1e-9)               // une surface suit le CARRÉ du facteur
+        assertEquals("+2,9 %", MesureSurface.textePourcentage(f))
+        assertEquals("−3,1 %", MesureSurface.textePourcentage(0.969))
+        assertNull(MesureSurface.facteurEtalonnage(1.40, 0.0))                              // mesure nulle
+        assertNull(MesureSurface.facteurEtalonnage(-1.0, 1.0))
+        assertNull(MesureSurface.facteurEtalonnage(2.0, 1.0))                               // +100 % : saisie ou points faux, refusé
+    }
+
+    @Test fun cotes_d_un_contour_de_l_espace() {
+        val carre = listOf(P3(0.0, 0.0, 0.0), P3(1.0, 0.0, 0.0), P3(1.0, 0.0, 2.0), P3(0.0, 0.0, 2.0))
+        assertEquals(listOf(1.0, 2.0, 1.0, 2.0), MesureSurface.cotesEspace(carre, ferme = true))
+        assertEquals(listOf(1.0, 2.0, 1.0), MesureSurface.cotesEspace(carre, ferme = false))
+        assertEquals(listOf(1.0), MesureSurface.cotesEspace(carre.take(2), ferme = true))   // 2 points : une seule longueur
+        assertTrue(MesureSurface.cotesEspace(carre.take(1), ferme = true).isEmpty())
+    }
+
+    @Test fun points_et_longueurs_se_rangent_en_texte_et_se_relisent() {
+        val pts = listOf(P3(0.1234, -2.5, 3.0), P3(1.0, 0.0, -0.0001))
+        val relus = MesureSurface.texteVersPoints(MesureSurface.pointsVersTexte(pts))
+        assertEquals(2, relus.size)
+        assertEquals(0.1234, relus[0].x, 1e-9); assertEquals(-2.5, relus[0].y, 1e-9); assertEquals(-0.0001, relus[1].z, 1e-9)
+        assertEquals(listOf(0.85, 1.2), MesureSurface.texteVersNombres(MesureSurface.nombresVersTexte(listOf(0.85, 1.2))))
+        assertTrue(MesureSurface.texteVersPoints("n'importe quoi;1,2").isEmpty())             // morceaux illisibles ignorés
+        assertTrue(MesureSurface.texteVersPoints("").isEmpty())
+    }
 }

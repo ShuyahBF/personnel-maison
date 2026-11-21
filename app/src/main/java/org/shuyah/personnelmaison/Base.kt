@@ -223,6 +223,24 @@ data class Medicament(
     val note: String = ""
 )
 
+/**
+ * Mesure enregistrée (version 1.51) : un nom (« Table basse du salon »), une note, le type (« direct » ou « photo »), les POINTS posés (réalité augmentée : « x,y,z;… » en mètres),
+ * les côtés, la surface et le périmètre (déjà multipliés par le facteur d'étalonnage de l'époque, gardé pour mémoire). Une mesure compte au moins 2 points (une longueur).
+ */
+@Entity(tableName = "mesures_enregistrees")
+data class MesureEnregistree(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val nom: String,
+    val note: String,
+    val type: String,
+    val points: String,
+    val cotes: String,
+    val aire: Double?,
+    val perimetre: Double?,
+    val facteur: Double,
+    val creeLe: Long
+)
+
 /** Une prise prévue d'un médicament à une heure donnée : ATTENTE (rappel envoyé), PRIS, OUBLIE (non confirmée après 30 minutes). Une seule ligne par médicament et par heure prévue. */
 @Entity(tableName = "prises_medicament", indices = [Index(value = ["medicamentId", "prevuMs"], unique = true)])
 data class PriseMedicament(
@@ -387,12 +405,18 @@ interface DaoMaison {
     @Query("SELECT * FROM evaluations WHERE id = :id") suspend fun evaluationParId(id: Long): Evaluation?
     @Query("SELECT * FROM evaluations") fun toutesEvaluations(): Flow<List<Evaluation>>
     @Query("DELETE FROM evaluations WHERE id = :id") suspend fun supprimerEvaluation(id: Long)
+
+    // ---- Mesures enregistrées (surfaces, longueurs) ----
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun ajouterMesure(m: MesureEnregistree): Long
+    @Query("SELECT * FROM mesures_enregistrees ORDER BY creeLe DESC") fun mesuresEnregistrees(): Flow<List<MesureEnregistree>>
+    @Query("UPDATE mesures_enregistrees SET nom = :nom, note = :note WHERE id = :id") suspend fun modifierMesure(id: Long, nom: String, note: String)
+    @Query("DELETE FROM mesures_enregistrees WHERE id = :id") suspend fun supprimerMesure(id: Long)
 }
 
 /** Résultat de « nombre de pièces par opération » (affiche l'icône de pièce dans la liste). */
 data class NombrePieces(val operationId: Long, val n: Int)
 
-@Database(entities = [Societe::class, Personnel::class, Pointage::class, NotePerso::class, Evaluation::class, JournalPointage::class, HorairePersonnel::class, NumeroTel::class, Paiement::class, Tache::class, DocumentSociete::class, ProfilUtilisateur::class, Operation::class, LigneOperation::class, PieceOperation::class, Medicament::class, PriseMedicament::class, Versement::class], version = 8, exportSchema = true)
+@Database(entities = [Societe::class, Personnel::class, Pointage::class, NotePerso::class, Evaluation::class, JournalPointage::class, HorairePersonnel::class, NumeroTel::class, Paiement::class, Tache::class, DocumentSociete::class, ProfilUtilisateur::class, Operation::class, LigneOperation::class, PieceOperation::class, Medicament::class, PriseMedicament::class, Versement::class, MesureEnregistree::class], version = 9, exportSchema = true)
 abstract class BaseDonnees : RoomDatabase() { abstract fun dao(): DaoMaison }
 
 /**
@@ -476,6 +500,13 @@ val MIGRATION_7_8 = object : androidx.room.migration.Migration(7, 8) {
     }
 }
 
+/** Migration 8 → 9 : mesures enregistrées (nom, note, points). Les données existantes sont conservées. */
+val MIGRATION_8_9 = object : androidx.room.migration.Migration(8, 9) {
+    override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS `mesures_enregistrees` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `nom` TEXT NOT NULL, `note` TEXT NOT NULL, `type` TEXT NOT NULL, `points` TEXT NOT NULL, `cotes` TEXT NOT NULL, `aire` REAL, `perimetre` REAL, `facteur` REAL NOT NULL, `creeLe` INTEGER NOT NULL)")
+    }
+}
+
 object Base {
     private var instance: BaseDonnees? = null
     const val NOM_FICHIER = "personnel_maison.db"
@@ -535,6 +566,6 @@ object Base {
             prefs.edit().putString("cle_base", cle).apply()
         }
         return Room.databaseBuilder(c, BaseDonnees::class.java, NOM_FICHIER)
-            .openHelperFactory(SupportFactory(SQLiteDatabase.getBytes(cle.toCharArray()))).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8).build()
+            .openHelperFactory(SupportFactory(SQLiteDatabase.getBytes(cle.toCharArray()))).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9).build()
     }
 }
