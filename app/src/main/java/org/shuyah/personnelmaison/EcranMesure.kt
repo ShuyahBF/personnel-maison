@@ -73,7 +73,9 @@ import java.util.Locale
  */
 @Composable
 fun EcranMesure(retour: () -> Unit) {
-    var mode by remember { mutableStateOf("") }          // "" = choix, "direct", "photo"
+    val ctx = LocalContext.current
+    remember { Affichage.charger(ctx) }                  // unité d'affichage choisie la dernière fois
+    var mode by remember { mutableStateOf("") }          // "" = choix, "direct", "photo", "mesures"
     when (mode) {
         "direct" -> MesureEnDirect(retour = { mode = "" }, versPhoto = { mode = "photo" })
         "photo" -> MesureSurPhoto(retour = { mode = "" })
@@ -89,6 +91,29 @@ fun EcranMesure(retour: () -> Unit) {
 /** Facteur d'étalonnage enregistré (1,0 = aucun). Gardé dans les préférences de l'application : il corrige TOUTES les mesures en direct suivantes. */
 private fun lireFacteur(c: Context): Double = c.getSharedPreferences("mesure", Context.MODE_PRIVATE).getFloat("facteur", 1f).toDouble().takeIf { it in MesureSurface.FACTEUR_MIN..MesureSurface.FACTEUR_MAX } ?: 1.0
 private fun ecrireFacteur(c: Context, f: Double) { c.getSharedPreferences("mesure", Context.MODE_PRIVATE).edit().putFloat("facteur", f.toFloat()).apply() }
+
+/**
+ * UNITÉ D'AFFICHAGE (v1.54, propriétaire 21/11/2026 : « pouces ou mm, et convertir après enregistrement »). Les mesures restent TOUJOURS en mètres ; seule l'unité montrée change,
+ * partout (mesure en direct, mesures enregistrées, détail, copie). Le choix est gardé sur le téléphone.
+ */
+private object Affichage {
+    var unite by mutableStateOf(MesureSurface.Unite.AUTO)
+    fun longueur(m: Double) = MesureSurface.texteLongueurUnite(m, unite)
+    fun aire(m2: Double) = MesureSurface.texteAireUnite(m2, unite)
+    fun charger(c: Context) { unite = MesureSurface.uniteDepuisNom(c.getSharedPreferences("mesure", Context.MODE_PRIVATE).getString("unite", null)) }
+    fun choisir(c: Context, u: MesureSurface.Unite) { unite = u; c.getSharedPreferences("mesure", Context.MODE_PRIVATE).edit().putString("unite", u.name).apply() }
+    /** Symbole court : « m/cm », « mm », « cm », « po ». */
+    val symbole: String get() = when (unite) { MesureSurface.Unite.AUTO -> "cm"; MesureSurface.Unite.MM -> "mm"; MesureSurface.Unite.CM -> "cm"; MesureSurface.Unite.POUCES -> "po" }
+    /** Unité suivante dans l'ordre Automatique → mm → cm → po (tuile « Unité »). */
+    fun suivante(c: Context) { val t = MesureSurface.Unite.values(); choisir(c, t[(unite.ordinal + 1) % t.size]); Toast.makeText(c, "Unité : ${unite.libelle}", Toast.LENGTH_SHORT).show() }
+}
+
+/** Liste déroulante de l'unité d'affichage (liste finie : règle 10). */
+@Composable
+private fun SelecteurUnite() {
+    val c = LocalContext.current
+    Liste("Unité d'affichage", Affichage.unite.libelle, MesureSurface.Unite.values().map { it.libelle }) { nom -> Affichage.choisir(c, MesureSurface.Unite.values().first { it.libelle == nom }) }
+}
 
 /** Copie un résultat dans le presse-papiers, avec un message de confirmation (jamais d'action silencieuse). */
 private fun copier(c: Context, texte: String) {
@@ -108,6 +133,10 @@ private fun ChoixMesure(retour: () -> Unit, choisir: (String) -> Unit) {
         Carte("Deux façons de mesurer", Icons.Filled.Straighten) {
             Text("En direct : vous visez le sol ou le mur et posez les coins un à un. Sur photo : vous photographiez la surface avec une feuille A4 posée dessus.", color = BleuNuit, fontSize = 15.sp)
             Text("Précision habituelle : 1 à 3 % (quelques centimètres par mètre). Pour corriger l'écart de votre téléphone, mesurez un mètre ruban en direct puis touchez « Étalonner ». Pour un devis ou un achat important, vérifiez au mètre ruban.", color = Gris, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
+        }
+        Carte("Unité de mesure", Icons.Filled.SwapHoriz) {
+            SelecteurUnite()
+            Text("Les mesures sont gardées en mètres : changer l'unité convertit aussi les mesures déjà enregistrées.", color = Gris, fontSize = 13.sp)
         }
         GrosBouton(Icons.Filled.ViewInAr, "Mesure en direct", Bleu, actif = compatible != false,
             sousTexte = if (compatible == false) "Téléphone non compatible (Google ARCore)" else "Réalité augmentée : visez, posez les points") { choisir("direct") }
@@ -134,9 +163,9 @@ private fun BandeauResultat(aire: Double?, perimetre: Double?, detail: String, m
     Column(modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(BleuNuit).padding(horizontal = 16.dp, vertical = 10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Filled.SquareFoot, null, tint = Orange, modifier = Modifier.size(30.dp))
-            Text(if (aire != null) MesureSurface.texteAire(aire) else "—", color = Orange, fontSize = 30.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 10.dp))
+            Text(if (aire != null) Affichage.aire(aire) else "—", color = Orange, fontSize = 30.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 10.dp))
         }
-        if (perimetre != null) Text("Périmètre : ${MesureSurface.texteLongueur(perimetre)}", color = Color.White, fontSize = 16.sp)
+        if (perimetre != null) Text("Périmètre : ${Affichage.longueur(perimetre)}", color = Color.White, fontSize = 16.sp)
         if (detail.isNotBlank()) Text(detail, color = Color(0xFFCBD5E1), fontSize = 13.sp)
     }
 
@@ -261,7 +290,7 @@ private fun MesureEnDirect(retour: () -> Unit, versPhoto: () -> Unit) {
                     val fermeture = j == 0
                     if (ecran.size >= 2 && (!fermeture || ecran.size >= 3)) ecran[j]?.let { b ->
                         drawLine(if (fermeture) Color.White.copy(alpha = 0.7f) else Orange, Offset(a.x.toFloat(), a.y.toFloat()), Offset(b.x.toFloat(), b.y.toFloat()), strokeWidth = 3.dp.toPx())
-                        etiquette(MesureSurface.texteLongueur(MesureSurface.longueurEtalonnee(MesureSurface.distance(points[i], points[j]), facteur)), ((a.x + b.x) / 2).toFloat(), ((a.y + b.y) / 2).toFloat(), texte)
+                        etiquette(Affichage.longueur(MesureSurface.longueurEtalonnee(MesureSurface.distance(points[i], points[j]), facteur)), ((a.x + b.x) / 2).toFloat(), ((a.y + b.y) / 2).toFloat(), texte)
                     }
                 }
                 ecran.forEachIndexed { i, p -> if (p != null) { drawCircle(Color.White, 9.dp.toPx(), Offset(p.x.toFloat(), p.y.toFloat())); drawCircle(if (i == 0) Vert else Orange, 6.dp.toPx(), Offset(p.x.toFloat(), p.y.toFloat())) } }
@@ -269,7 +298,7 @@ private fun MesureEnDirect(retour: () -> Unit, versPhoto: () -> Unit) {
                 val centre = Offset(size.width / 2, size.height / 2)
                 ecran.lastOrNull()?.let { d -> if (prochain != null) {
                     drawLine(Color.White, Offset(d.x.toFloat(), d.y.toFloat()), centre, strokeWidth = 2.dp.toPx())
-                    etiquette(MesureSurface.texteLongueur(prochain), (d.x.toFloat() + centre.x) / 2, (d.y.toFloat() + centre.y) / 2, texte, Color(0xE62E9E6B))
+                    etiquette(Affichage.longueur(prochain), (d.x.toFloat() + centre.x) / 2, (d.y.toFloat() + centre.y) / 2, texte, Color(0xE62E9E6B))
                 } }
                 // Viseur : vert quand une surface est repérée (on peut poser), rouge sinon
                 val couleur = if (etat.surfaceVisee) Vert else Rouge
@@ -290,7 +319,7 @@ private fun MesureEnDirect(retour: () -> Unit, versPhoto: () -> Unit) {
                 Text("Mesure terminée", color = Orange, fontSize = 20.sp, fontWeight = FontWeight.Bold)
                 BandeauResultat(aire, perimetre, "${points.size} points" + if (facteur != 1.0) " · Étalonné ${MesureSurface.textePourcentage(facteur)}" else "")
                 val cotes = MesureSurface.cotesEspace(points, points.size >= 3).map { MesureSurface.longueurEtalonnee(it, facteur) }
-                cotes.forEachIndexed { i, l -> Text(if (cotes.size == 1) "Longueur : ${MesureSurface.texteLongueur(l)}" else "Côté ${i + 1} : ${MesureSurface.texteLongueur(l)}", color = Color.White, fontSize = 16.sp) }
+                cotes.forEachIndexed { i, l -> Text(if (cotes.size == 1) "Longueur : ${Affichage.longueur(l)}" else "Côté ${i + 1} : ${Affichage.longueur(l)}", color = Color.White, fontSize = 16.sp) }
                 Text("Touchez « Enregistrer » pour la garder, « Copier » pour la coller ailleurs, ou « Reprendre » pour continuer à mesurer.", color = Color(0xFFCBD5E1), fontSize = 13.sp)
             }
         }
@@ -306,6 +335,7 @@ private fun MesureEnDirect(retour: () -> Unit, versPhoto: () -> Unit) {
                     else if (ContextCompat.checkSelfPermission(c, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) { voix = true; Toast.makeText(c, "Commande vocale : dites « pose », « annule » ou « termine ».", Toast.LENGTH_LONG).show() }
                     else permissionMicro.launch(Manifest.permission.RECORD_AUDIO)
                 }
+                Tuile(Icons.Filled.SwapHoriz, "Unité : ${Affichage.symbole}", Bleu) { Affichage.suivante(c) }
                 Tuile(Icons.Filled.AddLocationAlt, "Poser un point", Vert, actif = etat.surfaceVisee) { ar.poser() }
                 // TERMINER : fige les points, arrête la caméra et affiche le résultat en grand
                 Tuile(Icons.Filled.Stop, "Terminer", Rouge, actif = points.size >= 2) { terminer() }
@@ -314,16 +344,19 @@ private fun MesureEnDirect(retour: () -> Unit, versPhoto: () -> Unit) {
                 Tuile(Icons.Filled.PlayArrow, "Reprendre", Vert) { termine = null; blocage = ar.demarrer(); Toast.makeText(c, "Mesure reprise : caméra relancée.", Toast.LENGTH_SHORT).show() }
                 Tuile(Icons.Filled.BookmarkAdd, "Enregistrer", Vert) { dialogue = "enregistrer" }
                 Tuile(Icons.Filled.ContentCopy, "Copier", Bleu, actif = perimetre != null) {
-                    copier(c, listOfNotNull(aire?.let { "Surface : ${MesureSurface.texteAire(it)}" }, perimetre?.let { "Périmètre : ${MesureSurface.texteLongueur(it)}" }).joinToString(" · "))
+                    copier(c, listOfNotNull(aire?.let { "Surface : ${Affichage.aire(it)}" }, perimetre?.let { "Périmètre : ${Affichage.longueur(it)}" }).joinToString(" · "))
                 }
+                Tuile(Icons.Filled.CompareArrows, "Comparer", Bleu, actif = points.size == 4) { dialogue = "comparer" }
+                Tuile(Icons.Filled.SwapHoriz, "Unité : ${Affichage.symbole}", Bleu) { Affichage.suivante(c) }
                 Tuile(Icons.Filled.Straighten, "Étalonner", Bleu) { dialogue = "etalonner" }
                 Tuile(Icons.Filled.Close, "Quitter", Orange) { retour() }
             }
         } }
     }
+    if (dialogue == "comparer") DialogueComparaison(MesureSurface.cotesEspace(points, true).map { MesureSurface.longueurEtalonnee(it, facteur) }, fermer = { dialogue = "" })
     if (dialogue == "etalonner") DialogueEtalonnage(points, facteur, surFacteur = { facteur = it; ecrireFacteur(c, it) }, fermer = { dialogue = "" })
     if (dialogue == "enregistrer") DialogueEnregistrer(
-        titre = "Enregistrer cette mesure", resume = listOfNotNull(aire?.let { "Surface : ${MesureSurface.texteAire(it)}" }, perimetre?.let { "Périmètre : ${MesureSurface.texteLongueur(it)}" }).joinToString(" · "),
+        titre = "Enregistrer cette mesure", resume = listOfNotNull(aire?.let { "Surface : ${Affichage.aire(it)}" }, perimetre?.let { "Périmètre : ${Affichage.longueur(it)}" }).joinToString(" · "),
         nombrePoints = points.size, fermer = { dialogue = "" }) { nom, note ->
         val ferme = points.size >= 3
         Enregistrement.ajouter(c, MesureEnregistree(nom = nom, note = note, type = "direct", points = MesureSurface.pointsVersTexte(points),
@@ -359,14 +392,14 @@ private fun DialogueEtalonnage(points: List<MesureSurface.P3>, facteur: Double, 
     AlertDialog(onDismissRequest = fermer, title = { Text("Étalonner la mesure") },
         text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (brute != null) {
-                Text("Les 2 derniers points mesurent ${MesureSurface.texteLongueur(brute)} (sans correction).", color = BleuNuit, fontSize = 15.sp)
-                Champ("Vraie longueur entre ces 2 points (cm)", cm, { cm = it }, KeyboardType.Decimal)
+                Text("Les 2 derniers points mesurent ${Affichage.longueur(brute)} (sans correction).", color = BleuNuit, fontSize = 15.sp)
+                Champ("Vraie longueur entre ces 2 points (${Affichage.symbole})", cm, { cm = it }, KeyboardType.Decimal)
                 Text("Posez les 2 points aux deux extrémités d'une longueur connue (mètre ruban ouvert à 100 ou 140 cm), puis saisissez cette longueur. Toutes les mesures suivantes seront corrigées.", color = Gris, fontSize = 13.sp)
             } else Text("Posez d'abord 2 points aux deux extrémités d'une longueur connue (mètre ruban).", color = BleuNuit, fontSize = 15.sp)
             if (facteur != 1.0) Text("Étalonnage actuel : ${MesureSurface.textePourcentage(facteur)}.", color = Gris, fontSize = 13.sp)
         } },
-        confirmButton = { if (brute != null) Tuile(Icons.Filled.Check, "Étalonner", Vert, actif = MesureSurface.lireCentimetres(cm) != null) {
-            val reelle = MesureSurface.lireCentimetres(cm)
+        confirmButton = { if (brute != null) Tuile(Icons.Filled.Check, "Étalonner", Vert, actif = MesureSurface.lireLongueur(cm, Affichage.unite) != null) {
+            val reelle = MesureSurface.lireLongueur(cm, Affichage.unite)
             val f = reelle?.let { MesureSurface.facteurEtalonnage(it, brute) }
             if (f == null) Toast.makeText(c, "Étalonnage refusé : l'écart dépasse 15 %. Vérifiez la longueur saisie et la position des 2 points.", Toast.LENGTH_LONG).show()
             else { surFacteur(f); Toast.makeText(c, "Étalonnage enregistré : ${MesureSurface.textePourcentage(f)}.", Toast.LENGTH_LONG).show(); fermer() }
@@ -393,6 +426,47 @@ private fun DialogueEnregistrer(titre: String, resume: String, nombrePoints: Int
         dismissButton = { Tuile(Icons.Filled.Close, "Annuler", Orange) { fermer() } })
 }
 
+/**
+ * COMPARAISON AVEC LES DIMENSIONS ANNONCÉES (v1.54, propriétaire 21/11/2026 : « un téléviseur de 52 pouces : correspond-il aux dimensions du carton ? »).
+ * Un contour de 4 points (les 4 coins du téléviseur) donne largeur, hauteur et diagonale. On saisit les dimensions annoncées (dans l'unité d'affichage) et/ou la diagonale en pouces ;
+ * l'écart et un verdict sont affichés. La diagonale annoncée en pouces est celle de l'ÉCRAN seul : le cadre ajoute 1 à 3 pouces.
+ */
+@Composable
+private fun DialogueComparaison(cotes: List<Double>, fermer: () -> Unit) {
+    var largeur by remember { mutableStateOf("") }
+    var hauteur by remember { mutableStateOf("") }
+    var diagonale by remember { mutableStateOf("52") }
+    val r = MesureSurface.rectangleDesCotes(cotes)
+    val u = Affichage.unite
+    AlertDialog(onDismissRequest = fermer, title = { Text("Comparer avec les dimensions annoncées") },
+        text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (r == null) Text("La comparaison demande un contour de 4 points : posez les 4 coins de l'objet (téléviseur, meuble…), dans l'ordre du tour.", color = BleuNuit, fontSize = 15.sp)
+            else {
+                Text("Mesuré : grand côté ${Affichage.longueur(r.grand)} · petit côté ${Affichage.longueur(r.petit)} · diagonale ${Affichage.longueur(r.diagonale)} (${"%.1f".format(Locale.FRANCE, r.diagonale / MesureSurface.POUCE_M)} po)", color = BleuNuit, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                SelecteurUnite()
+                Text("Dimensions annoncées sur le carton ou la fiche (dans l'unité ci-dessus ; en « Automatique », en cm)", color = Gris, fontSize = 13.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Champ("Largeur (${Affichage.symbole})", largeur, { largeur = it }, KeyboardType.Decimal, modifier = Modifier.weight(1f))
+                    Champ("Hauteur (${Affichage.symbole})", hauteur, { hauteur = it }, KeyboardType.Decimal, modifier = Modifier.weight(1f))
+                }
+                listOf("Largeur" to Pair(largeur, r.grand), "Hauteur" to Pair(hauteur, r.petit)).forEach { (nom, v) ->
+                    MesureSurface.lireLongueur(v.first, u)?.let { annoncee ->
+                        val e = MesureSurface.comparer(annoncee, v.second)
+                        Text("$nom : annoncée ${Affichage.longueur(annoncee)}, mesurée ${Affichage.longueur(v.second)} → ${MesureSurface.texteEcart(e, u)} : ${e.verdict}", color = if (e.verdict == "Conforme") Vert else if (e.verdict == "À vérifier") Rouge else Orange, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+                Champ("Diagonale annoncée (pouces, ex. 52)", diagonale, { diagonale = it }, KeyboardType.Decimal)
+                diagonale.trim().replace(',', '.').toDoubleOrNull()?.takeIf { it > 0 }?.let { d ->
+                    val (el, eh) = MesureSurface.ecranTelevision(d)
+                    Text("Un téléviseur de ${"%.0f".format(Locale.FRANCE, d)} pouces (16:9) a un ÉCRAN de ${Affichage.longueur(el)} × ${Affichage.longueur(eh)}.", color = BleuNuit, fontSize = 14.sp)
+                    Text(MesureSurface.coherenceDiagonale(r.diagonale / MesureSurface.POUCE_M, d), color = BleuNuit, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                }
+                Text("Attention : les dimensions imprimées sur un CARTON sont souvent celles de l'emballage (plus grandes que le téléviseur) ; comparez plutôt aux dimensions « sans pied » de la fiche du modèle. Précision de la mesure : 1 à 3 %.", color = Gris, fontSize = 12.sp)
+            }
+        } },
+        confirmButton = { Tuile(Icons.Filled.Check, "Fermer", Vert) { fermer() } })
+}
+
 // =====================================================================================
 // Mes mesures enregistrées
 // =====================================================================================
@@ -407,19 +481,20 @@ private fun MesuresEnregistrees(retour: () -> Unit) {
     var aSupprimer by remember { mutableStateOf<MesureEnregistree?>(null) }
     val date = remember { SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.FRANCE) }
     Page("Mes mesures enregistrées", retour) {
+        SelecteurUnite()                    // convertit TOUTES les mesures affichées (elles sont gardées en mètres)
         if (liste.isEmpty()) Carte("Aucune mesure enregistrée", Icons.Filled.Bookmarks) {
             Text("Faites une mesure en direct (2 points au moins : une longueur ; 3 points et plus : une surface), puis touchez « Enregistrer » : donnez-lui un nom (« Table basse du salon ») et une note.", color = Gris, fontSize = 14.sp)
         }
         liste.forEach { m ->
             Carte(m.nom, Icons.Filled.Straighten) {
                 val points = MesureSurface.texteVersPoints(m.points)
-                Text(listOfNotNull(m.aire?.let { "Surface : ${MesureSurface.texteAire(it)}" }, m.perimetre?.let { "Périmètre : ${MesureSurface.texteLongueur(it)}" },
-                    if (m.aire == null) MesureSurface.texteVersNombres(m.cotes).firstOrNull()?.let { "Longueur : ${MesureSurface.texteLongueur(it)}" } else null).joinToString(" · "), color = BleuNuit, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                Text(listOfNotNull(m.aire?.let { "Surface : ${Affichage.aire(it)}" }, m.perimetre?.let { "Périmètre : ${Affichage.longueur(it)}" },
+                    if (m.aire == null) MesureSurface.texteVersNombres(m.cotes).firstOrNull()?.let { "Longueur : ${Affichage.longueur(it)}" } else null).joinToString(" · "), color = BleuNuit, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                 Text("${if (m.type == "direct") "En direct" else "Sur photo"} · ${points.size.takeIf { it > 0 } ?: MesureSurface.texteVersNombres(m.cotes).size} points/côtés · ${date.format(Date(m.creeLe))}", color = Gris, fontSize = 13.sp)
                 if (m.note.isNotBlank()) Text(m.note, color = BleuNuit, fontSize = 14.sp)
                 RangeeTuiles {
                     Tuile(Icons.Filled.Visibility, "Détail", Bleu) { ouverte = m }
-                    Tuile(Icons.Filled.ContentCopy, "Copier", Bleu) { copier(c, "${m.nom} : " + listOfNotNull(m.aire?.let { "Surface ${MesureSurface.texteAire(it)}" }, m.perimetre?.let { "Périmètre ${MesureSurface.texteLongueur(it)}" }).joinToString(" · ").ifBlank { MesureSurface.texteVersNombres(m.cotes).firstOrNull()?.let { MesureSurface.texteLongueur(it) } ?: "" }) }
+                    Tuile(Icons.Filled.ContentCopy, "Copier", Bleu) { copier(c, "${m.nom} : " + listOfNotNull(m.aire?.let { "Surface ${Affichage.aire(it)}" }, m.perimetre?.let { "Périmètre ${Affichage.longueur(it)}" }).joinToString(" · ").ifBlank { MesureSurface.texteVersNombres(m.cotes).firstOrNull()?.let { Affichage.longueur(it) } ?: "" }) }
                     Tuile(Icons.Filled.Delete, "Supprimer", Rouge) { aSupprimer = m }
                 }
             }
@@ -437,16 +512,20 @@ private fun DetailMesure(m: MesureEnregistree, fermer: () -> Unit, enregistrer: 
     val points = MesureSurface.texteVersPoints(m.points)
     val cotes = MesureSurface.texteVersNombres(m.cotes)
     val modifie = nom != m.nom || note != m.note
+    var comparer by remember { mutableStateOf(false) }
+    if (comparer) DialogueComparaison(cotes, fermer = { comparer = false })
     AlertDialog(onDismissRequest = fermer, title = { Text("Mesure enregistrée") },
         text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Champ("Nom", nom, { nom = it })
             Champ("Note", note, { note = it }, lignes = 3)
             if (modifie) Text("Modifié, non enregistré : touchez « Enregistrer ».", color = Orange, fontSize = 12.sp)
-            m.aire?.let { Text("Surface : ${MesureSurface.texteAire(it)}", color = BleuNuit, fontSize = 16.sp, fontWeight = FontWeight.Bold) }
-            m.perimetre?.let { Text("Périmètre : ${MesureSurface.texteLongueur(it)}", color = BleuNuit, fontSize = 15.sp) }
+            m.aire?.let { Text("Surface : ${Affichage.aire(it)}", color = BleuNuit, fontSize = 16.sp, fontWeight = FontWeight.Bold) }
+            m.perimetre?.let { Text("Périmètre : ${Affichage.longueur(it)}", color = BleuNuit, fontSize = 15.sp) }
             if (m.facteur != 1.0) Text("Étalonnage appliqué : ${MesureSurface.textePourcentage(m.facteur)}", color = Gris, fontSize = 13.sp)
+            SelecteurUnite()
+            if (cotes.size == 4) Tuile(Icons.Filled.CompareArrows, "Comparer", Bleu) { comparer = true }
             Text("Côtés", fontWeight = FontWeight.Bold, color = BleuNuit)
-            cotes.forEachIndexed { i, l -> Text(if (cotes.size == 1) "Longueur : ${MesureSurface.texteLongueur(l)}" else "Côté ${i + 1} : ${MesureSurface.texteLongueur(l)}", fontSize = 14.sp) }
+            cotes.forEachIndexed { i, l -> Text(if (cotes.size == 1) "Longueur : ${Affichage.longueur(l)}" else "Côté ${i + 1} : ${Affichage.longueur(l)}", fontSize = 14.sp) }
             if (points.isNotEmpty()) {
                 Text("Points (en cm, par rapport au point 1)", fontWeight = FontWeight.Bold, color = BleuNuit)
                 points.forEachIndexed { i, p -> val o = points[0]
@@ -522,12 +601,12 @@ private fun MesureSurPhoto(retour: () -> Unit) {
                 tourner = !tourner; Toast.makeText(c, "Petit et grand côté du repère inversés : les longueurs sont recalculées.", Toast.LENGTH_SHORT).show()
             }
             Tuile(Icons.Filled.ContentCopy, "Copier", Bleu, actif = resultat != null) {
-                resultat?.let { r -> copier(c, if (contour.size >= 3) "Surface : ${MesureSurface.texteAire(r.aire)} · Périmètre : ${MesureSurface.texteLongueur(r.perimetre)}" else "Longueur : ${MesureSurface.texteLongueur(r.cotes.first())}") }
+                resultat?.let { r -> copier(c, if (contour.size >= 3) "Surface : ${Affichage.aire(r.aire)} · Périmètre : ${Affichage.longueur(r.perimetre)}" else "Longueur : ${Affichage.longueur(r.cotes.first())}") }
             }
             Tuile(Icons.Filled.BookmarkAdd, "Enregistrer", Vert, actif = resultat != null) { enregistrerOuvert = true }
         }
         if (enregistrerOuvert && resultat != null) DialogueEnregistrer("Enregistrer cette mesure",
-            if (contour.size >= 3) "Surface : ${MesureSurface.texteAire(resultat.aire)} · Périmètre : ${MesureSurface.texteLongueur(resultat.perimetre)}" else "Longueur : ${MesureSurface.texteLongueur(resultat.cotes.first())}",
+            if (contour.size >= 3) "Surface : ${Affichage.aire(resultat.aire)} · Périmètre : ${Affichage.longueur(resultat.perimetre)}" else "Longueur : ${Affichage.longueur(resultat.cotes.first())}",
             contour.size, fermer = { enregistrerOuvert = false }) { nom, note ->
             // Sur photo, les points sont des pixels : on garde les côtés (mètres) calculés avec le repère, pas les pixels
             Enregistrement.ajouter(c, MesureEnregistree(nom = nom, note = note, type = "photo", points = "", cotes = MesureSurface.nombresVersTexte(resultat.cotes),
@@ -545,8 +624,8 @@ private fun MesureSurPhoto(retour: () -> Unit) {
             reference == null -> "Dimensions du repère à saisir."
             contour.size < 2 -> "Touchez au moins 2 points."
             resultat == null -> "Mesure impossible : un point est trop loin (au-delà de l'horizon de la surface) ou les coins du repère sont mal placés."
-            contour.size == 2 -> "Longueur : ${MesureSurface.texteLongueur(resultat.cotes.first())}"
-            else -> "Côtés : " + resultat.cotes.joinToString(" · ") { MesureSurface.texteLongueur(it) }
+            contour.size == 2 -> "Longueur : ${Affichage.longueur(resultat.cotes.first())}"
+            else -> "Côtés : " + resultat.cotes.joinToString(" · ") { Affichage.longueur(it) }
         })
 
         photo?.let { image ->
@@ -594,7 +673,7 @@ private fun MesureSurPhoto(retour: () -> Unit) {
                         if (contour.size < 2 || (j == 0 && contour.size < 3)) continue
                         val a = ecran(contour[i]); val b = ecran(contour[j])
                         drawLine(Orange, a, b, strokeWidth = 3.dp.toPx())
-                        resultat?.cotes?.getOrNull(i)?.let { etiquette(MesureSurface.texteLongueur(it), (a.x + b.x) / 2, (a.y + b.y) / 2, texte) }
+                        resultat?.cotes?.getOrNull(i)?.let { etiquette(Affichage.longueur(it), (a.x + b.x) / 2, (a.y + b.y) / 2, texte) }
                     }
                     contour.forEach { drawCircle(Color.White, 8.dp.toPx(), ecran(it)); drawCircle(Orange, 5.dp.toPx(), ecran(it)) }
                 }
