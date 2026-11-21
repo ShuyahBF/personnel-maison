@@ -19,6 +19,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -54,6 +55,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import org.shuyah.personnelmaison.MesureSurface.P2
+import kotlin.math.hypot
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import kotlinx.coroutines.launch
@@ -158,15 +160,21 @@ private fun MesureEnDirect(retour: () -> Unit, versPhoto: () -> Unit) {
     // « Terminer » (v1.52) : les points sont FIGÉS (copie), la caméra est arrêtée ; null = mesure en cours
     var termine by remember { mutableStateOf<List<MesureSurface.P3>?>(null) }
     val estTermine by rememberUpdatedState(termine != null)
+    // Commande vocale (v1.53) : « pose » pose un point, « annule » retire le dernier, « termine » termine
+    var voix by remember { mutableStateOf(false) }
+    val permissionMicro = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
+        if (ok) voix = true else Toast.makeText(c, "Le micro est nécessaire à la commande vocale : autorisez-le dans les réglages du téléphone.", Toast.LENGTH_LONG).show()
+    }
 
     // La caméra de mesure suit la vie de l'écran : démarre quand il est au premier plan, s'arrête quand il est masqué, est libérée quand on le quitte
     val cycle = LocalLifecycleOwner.current
     DisposableEffect(cameraPermise) {
         ar.surEtat = { etat = it }
+        ar.surRefus = { Toast.makeText(c, "Aucune surface repérée à cet endroit : visez une zone nette du sol, d'un mur ou d'une table, et balayez lentement.", Toast.LENGTH_LONG).show() }
         val observateur = LifecycleEventObserver { _, evenement ->
             when (evenement) {
                 Lifecycle.Event.ON_RESUME -> if (cameraPermise && !estTermine) blocage = ar.demarrer()    // mesure terminée : la caméra reste éteinte
-                Lifecycle.Event.ON_PAUSE -> ar.suspendre()
+                Lifecycle.Event.ON_PAUSE -> { ar.suspendre(); voix = false }                // écran masqué : caméra ET micro rendus au téléphone
                 else -> {}
             }
         }
@@ -175,6 +183,25 @@ private fun MesureEnDirect(retour: () -> Unit, versPhoto: () -> Unit) {
         onDispose { cycle.lifecycle.removeObserver(observateur); ar.surEtat = {}; ar.fermer() }
     }
 
+    // Actions communes à la tuile ET à la voix : toujours confirmées par un message (jamais silencieuses)
+    val etatActuel by rememberUpdatedState(etat)
+    val terminer = {
+        if (termine == null && etat.points.size >= 2) { termine = etat.points; voix = false; ar.suspendre(); Toast.makeText(c, "Mesure terminée : caméra arrêtée.", Toast.LENGTH_SHORT).show() }
+    }
+    val terminerActuel by rememberUpdatedState(terminer)
+    val commandeVocale = remember {
+        CommandeVocale(c, surCommande = { cmd ->
+            if (!estTermine) when (cmd) {
+                CommandeVocaleLogique.Commande.POSER -> ar.poser()
+                CommandeVocaleLogique.Commande.ANNULER -> ar.annulerDernier()
+                CommandeVocaleLogique.Commande.TERMINER -> terminerActuel()
+            }
+        }, surProbleme = { Toast.makeText(c, it, Toast.LENGTH_LONG).show(); voix = false })
+    }
+    DisposableEffect(voix) {
+        if (voix) { if (!commandeVocale.demarrer()) voix = false }
+        onDispose { commandeVocale.arreter() }
+    }
     // Étalonnage (v1.51) : facteur gardé sur le téléphone ; toutes les longueurs affichées le suivent, les surfaces suivent son carré
     var facteur by remember { mutableStateOf(lireFacteur(c)) }
     var dialogue by remember { mutableStateOf("") }                      // "", "etalonner", "enregistrer"
@@ -197,8 +224,30 @@ private fun MesureEnDirect(retour: () -> Unit, versPhoto: () -> Unit) {
         // clipToBounds : le dessin (côtés, points) est COUPÉ aux bords de l'image de la caméra ; sans cela un côté qui sort de l'image se dessinait par-dessus les boutons du bas (constaté sur la vidéo du 19/11/2026)
         Box(Modifier.fillMaxWidth().weight(1f).background(Color.Black).clipToBounds()) {
             if (cameraPermise) AndroidView(factory = { ar.creerVue(it) }, modifier = Modifier.fillMaxSize())
-            // Par-dessus la caméra : points posés, côtés avec leur longueur, viseur au centre
-            Canvas(Modifier.fillMaxSize()) {
+            // Par-dessus la caméra : points posés, côtés avec leur longueur, viseur au centre.
+            // Gestes (v1.53) : TOUCHER l'écran pose un point à l'endroit touché ; GLISSER un point existant le déplace (pour corriger un coin mal posé).
+            Canvas(Modifier.fillMaxSize()
+                .pointerInput(Unit) {
+                    detectTapGestures { o ->
+                        if (estTermine) return@detectTapGestures
+                        val e = etatActuel; val rayon = 48.dp.toPx()
+                        // Un toucher tout près d'un point existant ne pose rien (il servira à le glisser)
+                        val surUnPoint = e.points.any { p -> MesureSurface.versEcran(p, e.vue, e.projection, size.width, size.height)?.let { hypot(it.x - o.x, it.y - o.y) < rayon } == true }
+                        if (!surUnPoint) ar.poser(o.x, o.y)
+                    }
+                }
+                .pointerInput(Unit) {
+                    var indice = -1
+                    detectDragGestures(
+                        onDragStart = { o ->
+                            val e = etatActuel; val rayon = 56.dp.toPx()
+                            indice = if (estTermine) -1 else e.points.indices.minByOrNull { i ->
+                                MesureSurface.versEcran(e.points[i], e.vue, e.projection, size.width, size.height)?.let { hypot(it.x - o.x, it.y - o.y) } ?: Double.MAX_VALUE
+                            }?.takeIf { i -> MesureSurface.versEcran(e.points[i], e.vue, e.projection, size.width, size.height)?.let { hypot(it.x - o.x, it.y - o.y) < rayon } == true } ?: -1
+                        },
+                        onDrag = { changement, _ -> if (indice >= 0) { changement.consume(); ar.deplacer(indice, changement.position.x, changement.position.y) } },
+                        onDragEnd = { indice = -1 }, onDragCancel = { indice = -1 })
+                }) {
                 val ecran = points.map { MesureSurface.versEcran(it, etat.vue, etat.projection, size.width.toInt(), size.height.toInt()) }
                 val texte = 13.sp.toPx()
                 // Surface colorée quand le contour a au moins 3 points tous visibles
@@ -229,9 +278,9 @@ private fun MesureEnDirect(retour: () -> Unit, versPhoto: () -> Unit) {
             }
             Column(Modifier.align(Alignment.TopCenter).padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 BandeauResultat(aire, perimetre, when {
-                    points.isEmpty() -> "Visez un coin de la surface puis appuyez sur « Poser un point »."
+                    points.isEmpty() -> "Visez un coin puis touchez l'écran, appuyez sur « Poser un point » ou dites « pose »."
                     points.size < 3 -> "${points.size} point(s) posé(s) : il en faut au moins 3 pour une surface."
-                    else -> "${points.size} points. Ajoutez les autres coins dans l'ordre du tour."
+                    else -> "${points.size} points. Ajoutez les autres coins dans l'ordre du tour. Glissez un point pour le déplacer."
                 } + if (facteur != 1.0) " · Étalonné ${MesureSurface.textePourcentage(facteur)}" else "")
                 if (etat.message.isNotBlank()) Text(etat.message, color = Color.White, fontSize = 14.sp,
                     modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(Color(0xCCD64545)).padding(horizontal = 10.dp, vertical = 6.dp))
@@ -248,15 +297,19 @@ private fun MesureEnDirect(retour: () -> Unit, versPhoto: () -> Unit) {
         // Actions : chacune a son pictogramme et sa légende
         Column(Modifier.fillMaxWidth().background(Color.White).padding(10.dp)) { RangeeTuiles {
             if (termine == null) {
-                Tuile(Icons.Filled.AddLocationAlt, "Poser un point", Vert, actif = etat.surfaceVisee) { ar.poser() }
+                // Ordre pensé pour la main droite : « Poser un point » sous le pouce (v1.53), « Étalonner » à sa place d'avant ; « Terminer » avant « Enregistrer »
+                Tuile(Icons.Filled.Straighten, "Étalonner", Bleu, actif = points.size >= 2 || facteur != 1.0) { dialogue = "etalonner" }
                 Tuile(Icons.Filled.Undo, "Annuler le dernier", Orange, actif = points.isNotEmpty()) { ar.annulerDernier() }
                 Tuile(Icons.Filled.RestartAlt, "Recommencer", Rouge, actif = points.isNotEmpty()) { ar.vider(); Toast.makeText(c, "Points effacés.", Toast.LENGTH_SHORT).show() }
-                Tuile(Icons.Filled.Straighten, "Étalonner", Bleu, actif = points.size >= 2 || facteur != 1.0) { dialogue = "etalonner" }
-                Tuile(Icons.Filled.BookmarkAdd, "Enregistrer", Vert, actif = points.size >= 2) { dialogue = "enregistrer" }
-                // TERMINER : fige les points, arrête la caméra et affiche le résultat en grand
-                Tuile(Icons.Filled.Stop, "Terminer", Rouge, actif = points.size >= 2) {
-                    termine = etat.points; ar.suspendre(); Toast.makeText(c, "Mesure terminée : caméra arrêtée.", Toast.LENGTH_SHORT).show()
+                Tuile(if (voix) Icons.Filled.Mic else Icons.Filled.MicOff, if (voix) "Voix : écoute" else "Voix", if (voix) Vert else Gris) {
+                    if (voix) { voix = false; Toast.makeText(c, "Commande vocale arrêtée.", Toast.LENGTH_SHORT).show() }
+                    else if (ContextCompat.checkSelfPermission(c, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) { voix = true; Toast.makeText(c, "Commande vocale : dites « pose », « annule » ou « termine ».", Toast.LENGTH_LONG).show() }
+                    else permissionMicro.launch(Manifest.permission.RECORD_AUDIO)
                 }
+                Tuile(Icons.Filled.AddLocationAlt, "Poser un point", Vert, actif = etat.surfaceVisee) { ar.poser() }
+                // TERMINER : fige les points, arrête la caméra et affiche le résultat en grand
+                Tuile(Icons.Filled.Stop, "Terminer", Rouge, actif = points.size >= 2) { terminer() }
+                Tuile(Icons.Filled.BookmarkAdd, "Enregistrer", Vert, actif = points.size >= 2) { dialogue = "enregistrer" }
             } else {
                 Tuile(Icons.Filled.PlayArrow, "Reprendre", Vert) { termine = null; blocage = ar.demarrer(); Toast.makeText(c, "Mesure reprise : caméra relancée.", Toast.LENGTH_SHORT).show() }
                 Tuile(Icons.Filled.BookmarkAdd, "Enregistrer", Vert) { dialogue = "enregistrer" }

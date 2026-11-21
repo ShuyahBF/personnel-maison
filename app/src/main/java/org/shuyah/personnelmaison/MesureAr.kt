@@ -53,6 +53,8 @@ class MesureAr(private val activite: Activity) : GLSurfaceView.Renderer {
 
     /** Appelé (sur le fil de l'écran) à chaque nouvelle image. */
     var surEtat: (Etat) -> Unit = {}
+    /** Appelé quand un point demandé à l'écran (toucher) ne peut pas être posé : aucune surface repérée à cet endroit. */
+    var surRefus: () -> Unit = {}
 
     private var session: Session? = null
     private val ancres = ArrayList<Anchor>()
@@ -139,9 +141,18 @@ class MesureAr(private val activite: Activity) : GLSurfaceView.Renderer {
 
     private fun enFile(action: () -> Unit) { vueGl?.queueEvent(action) }
     @Volatile private var poseDemandee = false
+    @Volatile private var poseX = -1f
+    @Volatile private var poseY = -1f
+    // Déplacement d'un point par glisser du doigt (v1.53) : numéro du point et position du doigt (pixels de la vue) ; -1 = aucun
+    @Volatile private var deplaceIndice = -1
+    @Volatile private var deplaceX = 0f
+    @Volatile private var deplaceY = 0f
 
-    /** « Poser un point » : le point visé à la prochaine image est gardé. */
-    fun poser() { poseDemandee = true }
+    /** « Poser un point » : le point visé à la prochaine image est gardé. Sans position : le centre de l'écran (viseur) ; avec (x, y) : l'endroit TOUCHÉ de l'écran (v1.53). */
+    fun poser(x: Float = -1f, y: Float = -1f) { poseX = x; poseY = y; poseDemandee = true }
+
+    /** Déplace le point numéro `indice` sous le doigt (x, y en pixels de la vue) : le point est reposé sur la surface visée à cet endroit. */
+    fun deplacer(indice: Int, x: Float, y: Float) { deplaceX = x; deplaceY = y; deplaceIndice = indice }
     /** « Annuler » : retire le dernier point posé. */
     fun annulerDernier() = enFile { if (ancres.isNotEmpty()) ancres.removeAt(ancres.size - 1).detach() }
     /** « Recommencer » : retire tous les points. */
@@ -196,16 +207,20 @@ class MesureAr(private val activite: Activity) : GLSurfaceView.Renderer {
             camera.getProjectionMatrix(projection, 0, 0.05f, 100f)
 
             // Point de la surface sous le CENTRE de l'écran : d'abord une surface plane reconnue, sinon un point isolé dont l'orientation est estimée
-            var vise: com.google.ar.core.HitResult? = null
-            if (suivi) {
-                val touches = image.hitTest(largeur / 2f, hauteur / 2f)
-                vise = touches.firstOrNull { val t = it.trackable; t is Plane && t.trackingState == TrackingState.TRACKING && t.isPoseInPolygon(it.hitPose) }
-                    ?: touches.firstOrNull { it.trackable is com.google.ar.core.DepthPoint }
-                    ?: touches.firstOrNull { val t = it.trackable; t is Point && t.orientationMode == Point.OrientationMode.ESTIMATED_SURFACE_NORMAL }
-            }
+            val vise = if (suivi) viser(image, largeur / 2f, hauteur / 2f) else null
             if (poseDemandee) {
                 poseDemandee = false
-                if (vise != null && ancres.size < 60) ancres.add(vise.createAnchor())
+                // Position touchée (v1.53) : la surface est cherchée à CET endroit ; sinon le viseur du centre
+                val cible = if (poseX >= 0f) (if (suivi) viser(image, poseX, poseY) else null) else vise
+                if (cible != null && ancres.size < 60) ancres.add(cible.createAnchor()) else if (poseX >= 0f) principal.post { surRefus() }
+                poseX = -1f; poseY = -1f
+            }
+            // Point glissé du doigt : repose le point sur la surface visée sous le doigt (l'ancien repère est retiré seulement si la nouvelle position est valable)
+            val i = deplaceIndice
+            if (i >= 0) {
+                deplaceIndice = -1
+                val cible = if (suivi) viser(image, deplaceX, deplaceY) else null
+                if (cible != null && i in ancres.indices) { val ancien = ancres[i]; ancres[i] = cible.createAnchor(); ancien.detach() }
             }
             val points = ancres.filter { it.trackingState != TrackingState.STOPPED }.map { val p = it.pose; MesureSurface.P3(p.tx().toDouble(), p.ty().toDouble(), p.tz().toDouble()) }
             val reticule = vise?.hitPose?.let { MesureSurface.P3(it.tx().toDouble(), it.ty().toDouble(), it.tz().toDouble()) }
@@ -220,6 +235,14 @@ class MesureAr(private val activite: Activity) : GLSurfaceView.Renderer {
         }
     }
     private var uvPret = false
+
+    /** Surface visée en (x, y) pixels : d'abord un plan reconnu (et dans son contour), puis un point de profondeur, enfin un point isolé d'orientation estimée. */
+    private fun viser(image: com.google.ar.core.Frame, x: Float, y: Float): com.google.ar.core.HitResult? {
+        val touches = image.hitTest(x, y)
+        return touches.firstOrNull { val t = it.trackable; t is Plane && t.trackingState == TrackingState.TRACKING && t.isPoseInPolygon(it.hitPose) }
+            ?: touches.firstOrNull { it.trackable is com.google.ar.core.DepthPoint }
+            ?: touches.firstOrNull { val t = it.trackable; t is Point && t.orientationMode == Point.OrientationMode.ESTIMATED_SURFACE_NORMAL }
+    }
 
     private fun dessinerCamera() {
         GLES20.glDisable(GLES20.GL_DEPTH_TEST)
