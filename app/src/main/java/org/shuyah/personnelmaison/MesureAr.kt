@@ -51,6 +51,16 @@ class MesureAr(private val activite: Activity) : GLSurfaceView.Renderer {
         val message: String = "",
     )
 
+    /**
+     * IMAGE FIGÉE (v1.56) : photo de ce que voyait la caméra au moment où un point a été posé, avec les matrices de la caméra à cet instant ; elle permet de
+     * revoir la mesure plus tard et de CORRIGER un point mal posé (main tremblante) en le déplaçant sur l'image.
+     */
+    class Instantane(val image: android.graphics.Bitmap, val vue: FloatArray, val projection: FloatArray, val largeur: Int, val hauteur: Int)
+
+    /** Images figées gardées (4 au plus) : la première au 1er point, puis une nouvelle seulement quand un point posé n'apparaît dans aucune image déjà gardée. */
+    private val instantanes = java.util.concurrent.CopyOnWriteArrayList<Instantane>()
+    fun instantanes(): List<Instantane> = instantanes.toList()
+
     /** Appelé (sur le fil de l'écran) à chaque nouvelle image. */
     var surEtat: (Etat) -> Unit = {}
     /** Appelé quand un point demandé à l'écran (toucher) ne peut pas être posé : aucune surface repérée à cet endroit. */
@@ -134,7 +144,7 @@ class MesureAr(private val activite: Activity) : GLSurfaceView.Renderer {
     fun fermer() {
         suspendre()
         val s = session; session = null
-        ancres.clear()
+        ancres.clear(); instantanes.clear()
         // La fermeture d'une session peut prendre du temps : hors du fil de l'écran
         Thread { try { s?.close() } catch (e: Exception) { } }.start()
     }
@@ -156,7 +166,14 @@ class MesureAr(private val activite: Activity) : GLSurfaceView.Renderer {
     /** « Annuler » : retire le dernier point posé. */
     fun annulerDernier() = enFile { if (ancres.isNotEmpty()) ancres.removeAt(ancres.size - 1).detach() }
     /** « Recommencer » : retire tous les points. */
-    fun vider() = enFile { ancres.forEach { it.detach() }; ancres.clear() }
+    fun vider() = enFile { ancres.forEach { it.detach() }; ancres.clear(); instantanes.clear() }
+
+    /** Remplace tous les points par ceux-ci (positions en mètres) : après une CORRECTION sur l'image figée, quand la mesure reprend. À appeler une fois la caméra relancée. */
+    fun remplacer(points: List<MesureSurface.P3>) = enFile {
+        val s = session ?: return@enFile
+        ancres.forEach { it.detach() }; ancres.clear()
+        points.forEach { p -> try { ancres.add(s.createAnchor(com.google.ar.core.Pose(floatArrayOf(p.x.toFloat(), p.y.toFloat(), p.z.toFloat()), floatArrayOf(0f, 0f, 0f, 1f)))) } catch (e: Exception) { } }
+    }
 
     // =====================================================================================
     // OpenGL
@@ -212,7 +229,12 @@ class MesureAr(private val activite: Activity) : GLSurfaceView.Renderer {
                 poseDemandee = false
                 // Position touchée (v1.53) : la surface est cherchée à CET endroit ; sinon le viseur du centre
                 val cible = if (poseX >= 0f) (if (suivi) viser(image, poseX, poseY) else null) else vise
-                if (cible != null && ancres.size < 60) ancres.add(cible.createAnchor()) else if (poseX >= 0f) principal.post { surRefus() }
+                if (cible != null && ancres.size < 60) {
+                    val ancre = cible.createAnchor(); ancres.add(ancre)
+                    // Image figée : au 1er point, puis quand ce point n'est visible dans aucune image déjà gardée
+                    val pp = MesureSurface.P3(ancre.pose.tx().toDouble(), ancre.pose.ty().toDouble(), ancre.pose.tz().toDouble())
+                    if (instantanes.size < 4 && instantanes.none { dansImage(pp, it) }) lireImage()?.let { instantanes.add(Instantane(it, vue.copyOf(), projection.copyOf(), largeur, hauteur)) }
+                } else if (poseX >= 0f) principal.post { surRefus() }
                 poseX = -1f; poseY = -1f
             }
             // Point glissé du doigt : repose le point sur la surface visée sous le doigt (l'ancien repère est retiré seulement si la nouvelle position est valable)
@@ -235,6 +257,26 @@ class MesureAr(private val activite: Activity) : GLSurfaceView.Renderer {
         }
     }
     private var uvPret = false
+
+    /** Ce point de l'espace apparaît-il dans cette image figée (avec une marge de 24 pixels) ? */
+    private fun dansImage(p: MesureSurface.P3, i: Instantane): Boolean {
+        val e = MesureSurface.versEcran(p, i.vue, i.projection, i.largeur, i.hauteur) ?: return false
+        return e.x in 24.0..(i.largeur - 24.0) && e.y in 24.0..(i.hauteur - 24.0)
+    }
+
+    /** Lit l'image de la caméra qui vient d'être dessinée (OpenGL, dans le bon sens). Appelé sur le fil OpenGL seulement ; null en cas de problème. */
+    private fun lireImage(): android.graphics.Bitmap? = try {
+        val w = largeur; val h = hauteur
+        val tampon = ByteBuffer.allocateDirect(w * h * 4).order(ByteOrder.nativeOrder())
+        GLES20.glReadPixels(0, 0, w, h, GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, tampon)
+        tampon.rewind()
+        val lu = tampon.asIntBuffer(); val pixels = IntArray(w * h)
+        for (y in 0 until h) for (x in 0 until w) {
+            val v = lu.get(y * w + x)                                          // octets R, G, B, A rangés dans l'ordre du processeur
+            pixels[(h - 1 - y) * w + x] = (0xFF shl 24) or ((v and 0xFF) shl 16) or (((v shr 8) and 0xFF) shl 8) or ((v shr 16) and 0xFF)
+        }
+        android.graphics.Bitmap.createBitmap(pixels, w, h, android.graphics.Bitmap.Config.ARGB_8888)
+    } catch (e: Throwable) { null }
 
     /** Surface visée en (x, y) pixels : d'abord un plan reconnu (et dans son contour), puis un point de profondeur, enfin un point isolé d'orientation estimée. */
     private fun viser(image: com.google.ar.core.Frame, x: Float, y: Float): com.google.ar.core.HitResult? {

@@ -405,4 +405,76 @@ object MesureSurface {
     fun texteLigneEcart(l: LigneEcart, u: Unite): String =
         if (l.surface) "${l.libelle} : objectif ${texteAireUnite(l.objectif, u)} · mesuré ${texteAireUnite(l.mesure, u)} → ${texteEcartAire(l.ecart, u)} : ${l.ecart.verdict}"
         else "${l.libelle} : objectif ${texteLongueurUnite(l.objectif, u)} · mesuré ${texteLongueurUnite(l.mesure, u)} → ${texteEcart(l.ecart, u)} : ${l.ecart.verdict}"
+
+    // =====================================================================================
+    // Correction des points sur l'IMAGE FIGÉE (v1.56, propriétaire 21/11/2026 : « si la main tremblait, déplacer les points sur l'image gardée au 1er point »)
+    // =====================================================================================
+
+    /** Produit de deux matrices 4 × 4 (colonne par colonne, comme OpenGL) : a · b. */
+    private fun produit4(a: DoubleArray, b: DoubleArray): DoubleArray = DoubleArray(16) { i -> val col = i / 4; val lig = i % 4; (0 until 4).sumOf { k -> a[k * 4 + lig] * b[col * 4 + k] } }
+
+    /** Inverse d'une matrice 4 × 4 (colonne par colonne) par la méthode des cofacteurs ; null si elle n'est pas inversible. */
+    fun inverse4(m: DoubleArray): DoubleArray? {
+        val inv = DoubleArray(16)
+        inv[0] = m[5] * m[10] * m[15] - m[5] * m[11] * m[14] - m[9] * m[6] * m[15] + m[9] * m[7] * m[14] + m[13] * m[6] * m[11] - m[13] * m[7] * m[10]
+        inv[4] = -m[4] * m[10] * m[15] + m[4] * m[11] * m[14] + m[8] * m[6] * m[15] - m[8] * m[7] * m[14] - m[12] * m[6] * m[11] + m[12] * m[7] * m[10]
+        inv[8] = m[4] * m[9] * m[15] - m[4] * m[11] * m[13] - m[8] * m[5] * m[15] + m[8] * m[7] * m[13] + m[12] * m[5] * m[11] - m[12] * m[7] * m[9]
+        inv[12] = -m[4] * m[9] * m[14] + m[4] * m[10] * m[13] + m[8] * m[5] * m[14] - m[8] * m[6] * m[13] - m[12] * m[5] * m[10] + m[12] * m[6] * m[9]
+        inv[1] = -m[1] * m[10] * m[15] + m[1] * m[11] * m[14] + m[9] * m[2] * m[15] - m[9] * m[3] * m[14] - m[13] * m[2] * m[11] + m[13] * m[3] * m[10]
+        inv[5] = m[0] * m[10] * m[15] - m[0] * m[11] * m[14] - m[8] * m[2] * m[15] + m[8] * m[3] * m[14] + m[12] * m[2] * m[11] - m[12] * m[3] * m[10]
+        inv[9] = -m[0] * m[9] * m[15] + m[0] * m[11] * m[13] + m[8] * m[1] * m[15] - m[8] * m[3] * m[13] - m[12] * m[1] * m[11] + m[12] * m[3] * m[9]
+        inv[13] = m[0] * m[9] * m[14] - m[0] * m[10] * m[13] - m[8] * m[1] * m[14] + m[8] * m[2] * m[13] + m[12] * m[1] * m[10] - m[12] * m[2] * m[9]
+        inv[2] = m[1] * m[6] * m[15] - m[1] * m[7] * m[14] - m[5] * m[2] * m[15] + m[5] * m[3] * m[14] + m[13] * m[2] * m[7] - m[13] * m[3] * m[6]
+        inv[6] = -m[0] * m[6] * m[15] + m[0] * m[7] * m[14] + m[4] * m[2] * m[15] - m[4] * m[3] * m[14] - m[12] * m[2] * m[7] + m[12] * m[3] * m[6]
+        inv[10] = m[0] * m[5] * m[15] - m[0] * m[7] * m[13] - m[4] * m[1] * m[15] + m[4] * m[3] * m[13] + m[12] * m[1] * m[7] - m[12] * m[3] * m[5]
+        inv[14] = -m[0] * m[5] * m[14] + m[0] * m[6] * m[13] + m[4] * m[1] * m[14] - m[4] * m[2] * m[13] - m[12] * m[1] * m[6] + m[12] * m[2] * m[5]
+        inv[3] = -m[1] * m[6] * m[11] + m[1] * m[7] * m[10] + m[5] * m[2] * m[11] - m[5] * m[3] * m[10] - m[9] * m[2] * m[7] + m[9] * m[3] * m[6]
+        inv[7] = m[0] * m[6] * m[11] - m[0] * m[7] * m[10] - m[4] * m[2] * m[11] + m[4] * m[3] * m[10] + m[8] * m[2] * m[7] - m[8] * m[3] * m[6]
+        inv[11] = -m[0] * m[5] * m[11] + m[0] * m[7] * m[9] + m[4] * m[1] * m[11] - m[4] * m[3] * m[9] - m[8] * m[1] * m[7] + m[8] * m[3] * m[5]
+        inv[15] = m[0] * m[5] * m[10] - m[0] * m[6] * m[9] - m[4] * m[1] * m[10] + m[4] * m[2] * m[9] + m[8] * m[1] * m[6] - m[8] * m[2] * m[5]
+        val det = m[0] * inv[0] + m[1] * inv[4] + m[2] * inv[8] + m[3] * inv[12]
+        if (abs(det) < 1e-12) return null
+        return DoubleArray(16) { inv[it] / det }
+    }
+
+    /** Rayon de l'espace (origine, direction unitaire) qui passe par le pixel (px, py) d'une image prise avec ces matrices de caméra. Null si les matrices ne sont pas inversibles. */
+    fun rayonSousPixel(px: Double, py: Double, largeur: Int, hauteur: Int, vue: FloatArray, projection: FloatArray): Pair<P3, P3>? {
+        val inv = inverse4(produit4(DoubleArray(16) { projection[it].toDouble() }, DoubleArray(16) { vue[it].toDouble() })) ?: return null
+        val nx = px / largeur * 2 - 1; val ny = 1 - py / hauteur * 2
+        fun point(z: Double): P3? {
+            val v = DoubleArray(4) { l -> inv[0 * 4 + l] * nx + inv[1 * 4 + l] * ny + inv[2 * 4 + l] * z + inv[3 * 4 + l] }
+            return if (abs(v[3]) < 1e-12) null else P3(v[0] / v[3], v[1] / v[3], v[2] / v[3])
+        }
+        val a = point(-1.0) ?: return null; val b = point(1.0) ?: return null
+        val d = P3(b.x - a.x, b.y - a.y, b.z - a.z); val n = sqrt(d.x * d.x + d.y * d.y + d.z * d.z)
+        if (n < 1e-12) return null
+        return Pair(a, P3(d.x / n, d.y / n, d.z / n))
+    }
+
+    /** Normale unitaire du plan d'un contour (formule de Newell) ; null si moins de 3 points ou contour dégénéré. */
+    fun normaleContour(points: List<P3>): P3? {
+        if (points.size < 3) return null
+        var sx = 0.0; var sy = 0.0; var sz = 0.0
+        for (i in points.indices) { val a = points[i]; val b = points[(i + 1) % points.size]
+            sx += (a.y - b.y) * (a.z + b.z); sy += (a.z - b.z) * (a.x + b.x); sz += (a.x - b.x) * (a.y + b.y) }
+        val n = sqrt(sx * sx + sy * sy + sz * sz)
+        return if (n < 1e-9) null else P3(sx / n, sy / n, sz / n)
+    }
+
+    /**
+     * Nouvelle position (mètres) d'un point déplacé sous le doigt sur l'image figée : le rayon du pixel touché est coupé par le plan du contour (3 points et plus) passant par le point d'origine ;
+     * avec 2 points, ou si le rayon est presque parallèle au plan, le point reste à la même PROFONDEUR (plan perpendiculaire au regard). Null si le rayon ne coupe pas devant la caméra.
+     */
+    fun pointSousPixel(initial: P3, contour: List<P3>, px: Double, py: Double, largeur: Int, hauteur: Int, vue: FloatArray, projection: FloatArray): P3? {
+        val (o, d) = rayonSousPixel(px, py, largeur, hauteur, vue, projection) ?: return null
+        val nContour = normaleContour(contour)
+        // Sans plan exploitable : plan perpendiculaire à l'AXE de la caméra (rayon du centre de l'image), c'est-à-dire profondeur constante
+        val axe = rayonSousPixel(largeur / 2.0, hauteur / 2.0, largeur, hauteur, vue, projection)?.second ?: d
+        val n = if (nContour != null && abs(nContour.x * d.x + nContour.y * d.y + nContour.z * d.z) > 0.1) nContour else axe
+        val denom = n.x * d.x + n.y * d.y + n.z * d.z
+        if (abs(denom) < 1e-9) return null
+        val t = (n.x * (initial.x - o.x) + n.y * (initial.y - o.y) + n.z * (initial.z - o.z)) / denom
+        if (t.isNaN() || t <= 0.0) return null
+        return P3(o.x + d.x * t, o.y + d.y * t, o.z + d.z * t)
+    }
 }
