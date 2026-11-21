@@ -18,6 +18,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -157,17 +158,25 @@ private fun DrawScope.etiquette(texte: String, x: Float, y: Float, taillePx: Flo
     drawIntoCanvas { it.nativeCanvas.drawText(texte, x, y + taillePx * 0.35f, peinture) }
 }
 
-/** Bandeau de résultat : surface en grand, périmètre dessous. */
+/**
+ * Bandeau de résultat : surface en grand, périmètre dessous. Par-dessus la caméra (`translucide`, v1.56 : « le bandeau noir est trop invasif ») il est très transparent ;
+ * un toucher le RÉDUIT à une petite pastille (`reduit`) qui laisse voir l'image, un nouveau toucher le rouvre.
+ */
 @Composable
-private fun BandeauResultat(aire: Double?, perimetre: Double?, detail: String, modifier: Modifier = Modifier) =
-    Column(modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(BleuNuit).padding(horizontal = 16.dp, vertical = 10.dp)) {
+private fun BandeauResultat(aire: Double?, perimetre: Double?, detail: String, modifier: Modifier = Modifier, translucide: Boolean = false, reduit: Boolean = false, surToucher: (() -> Unit)? = null) {
+    val fond = if (translucide) BleuNuit.copy(alpha = if (reduit) 0.30f else 0.38f) else BleuNuit
+    val base = (if (reduit) Modifier.wrapContentWidth() else Modifier.fillMaxWidth()).clip(RoundedCornerShape(if (reduit) 20.dp else 16.dp)).background(fond)
+    Column(modifier.then(base).then(if (surToucher != null) Modifier.clickable { surToucher() } else Modifier).padding(horizontal = if (reduit) 12.dp else 16.dp, vertical = if (reduit) 4.dp else 10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Filled.SquareFoot, null, tint = Orange, modifier = Modifier.size(30.dp))
-            Text(if (aire != null) Affichage.aire(aire) else "—", color = Orange, fontSize = 30.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 10.dp))
+            Icon(Icons.Filled.SquareFoot, null, tint = Orange, modifier = Modifier.size(if (reduit) 18.dp else 30.dp))
+            Text(if (aire != null) Affichage.aire(aire) else if (perimetre != null) Affichage.longueur(perimetre) else "—", color = Orange, fontSize = if (reduit) 16.sp else 30.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 8.dp))
         }
-        if (perimetre != null) Text("Périmètre : ${Affichage.longueur(perimetre)}", color = Color.White, fontSize = 16.sp)
-        if (detail.isNotBlank()) Text(detail, color = Color(0xFFCBD5E1), fontSize = 13.sp)
+        if (!reduit) {
+            if (perimetre != null) Text("Périmètre : ${Affichage.longueur(perimetre)}", color = Color.White, fontSize = 16.sp)
+            if (detail.isNotBlank()) Text(detail, color = Color(0xFFE2E8F0), fontSize = 13.sp)
+        }
     }
+}
 
 // =====================================================================================
 // Mesure en direct (réalité augmentée)
@@ -191,6 +200,13 @@ private fun MesureEnDirect(retour: () -> Unit, versPhoto: () -> Unit) {
     val estTermine by rememberUpdatedState(termine != null)
     // Commande vocale (v1.53) : « pose » pose un point, « annule » retire le dernier, « termine » termine
     var voix by remember { mutableStateOf(false) }
+    var dernierMot by remember { mutableStateOf("") }                    // dernier mot compris par la commande vocale (affiché 2 s)
+    val retour_haptique = androidx.compose.ui.platform.LocalHapticFeedback.current
+    var bandeauReduit by remember { mutableStateOf(false) }              // bandeau de résultat réduit à une pastille (toucher pour basculer)
+    // Images figées et correction des points (v1.56)
+    var images by remember { mutableStateOf<List<MesureAr.Instantane>>(emptyList()) }
+    var corrige by remember { mutableStateOf(false) }                    // écran de correction ouvert
+    var correctionFaite by remember { mutableStateOf(false) }            // des points ont été déplacés : à reporter dans la caméra à la reprise
     val permissionMicro = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
         if (ok) voix = true else Toast.makeText(c, "Le micro est nécessaire à la commande vocale : autorisez-le dans les réglages du téléphone.", Toast.LENGTH_LONG).show()
     }
@@ -215,11 +231,13 @@ private fun MesureEnDirect(retour: () -> Unit, versPhoto: () -> Unit) {
     // Actions communes à la tuile ET à la voix : toujours confirmées par un message (jamais silencieuses)
     val etatActuel by rememberUpdatedState(etat)
     val terminer = {
-        if (termine == null && etat.points.size >= 2) { termine = etat.points; voix = false; ar.suspendre(); Toast.makeText(c, "Mesure terminée : caméra arrêtée.", Toast.LENGTH_SHORT).show() }
+        if (termine == null && etat.points.size >= 2) { termine = etat.points; voix = false; images = ar.instantanes(); corrige = false; correctionFaite = false; ar.suspendre(); Toast.makeText(c, "Mesure terminée : caméra arrêtée.", Toast.LENGTH_SHORT).show() }
     }
     val terminerActuel by rememberUpdatedState(terminer)
     val commandeVocale = remember {
         CommandeVocale(c, surCommande = { cmd ->
+            dernierMot = when (cmd) { CommandeVocaleLogique.Commande.POSER -> "pose"; CommandeVocaleLogique.Commande.ANNULER -> "annule"; CommandeVocaleLogique.Commande.TERMINER -> "termine" }
+            retour_haptique.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)          // petite vibration : « entendu »
             if (!estTermine) when (cmd) {
                 CommandeVocaleLogique.Commande.POSER -> ar.poser()
                 CommandeVocaleLogique.Commande.ANNULER -> ar.annulerDernier()
@@ -227,6 +245,7 @@ private fun MesureEnDirect(retour: () -> Unit, versPhoto: () -> Unit) {
             }
         }, surProbleme = { Toast.makeText(c, it, Toast.LENGTH_LONG).show(); voix = false })
     }
+    LaunchedEffect(dernierMot) { if (dernierMot.isNotEmpty()) { kotlinx.coroutines.delay(2000); dernierMot = "" } }
     DisposableEffect(voix) {
         if (voix) { if (!commandeVocale.demarrer()) voix = false }
         onDispose { commandeVocale.arreter() }
@@ -307,16 +326,21 @@ private fun MesureEnDirect(retour: () -> Unit, versPhoto: () -> Unit) {
                 drawCircle(couleur, 3.dp.toPx(), centre)
             }
             Column(Modifier.align(Alignment.TopCenter).padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (voix) Text(if (dernierMot.isNotEmpty()) "✔ Entendu : « $dernierMot »" else "🎤 À l'écoute : dites « pose », « annule » ou « termine »", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold,
+                    modifier = Modifier.clip(RoundedCornerShape(20.dp)).background(if (dernierMot.isNotEmpty()) Color(0xCC2E9E6B) else Color(0xB32E9E6B)).padding(horizontal = 12.dp, vertical = 6.dp))
                 BandeauResultat(aire, perimetre, when {
                     points.isEmpty() -> "Visez un coin puis touchez l'écran, appuyez sur « Poser un point » ou dites « pose »."
                     points.size < 3 -> "${points.size} point(s) posé(s) : il en faut au moins 3 pour une surface."
                     else -> "${points.size} points. Ajoutez les autres coins dans l'ordre du tour. Glissez un point pour le déplacer."
-                } + if (facteur != 1.0) " · Étalonné ${MesureSurface.textePourcentage(facteur)}" else "")
+                } + if (facteur != 1.0) " · Étalonné ${MesureSurface.textePourcentage(facteur)}" else "", translucide = true, reduit = bandeauReduit, surToucher = { bandeauReduit = !bandeauReduit })
                 if (etat.message.isNotBlank()) Text(etat.message, color = Color.White, fontSize = 14.sp,
-                    modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(Color(0xCCD64545)).padding(horizontal = 10.dp, vertical = 6.dp))
+                    modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(Color(0x99D64545)).padding(horizontal = 10.dp, vertical = 6.dp))
             }
             // MESURE TERMINÉE (v1.52) : résultat figé, lisible tranquillement ; la caméra est arrêtée (batterie)
-            if (termine != null) Column(Modifier.fillMaxSize().background(BleuNuit).verticalScroll(rememberScrollState()).padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (termine != null && corrige && images.isNotEmpty()) CorrectionPoints(images, termine!!, facteur,
+                valider = { nouveaux -> if (nouveaux != termine) { termine = nouveaux; correctionFaite = true; Toast.makeText(c, "Points corrigés : le résultat est recalculé.", Toast.LENGTH_SHORT).show() }; corrige = false },
+                fermer = { corrige = false })
+            else if (termine != null) Column(Modifier.fillMaxSize().background(BleuNuit).verticalScroll(rememberScrollState()).padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Mesure terminée", color = Orange, fontSize = 20.sp, fontWeight = FontWeight.Bold)
                 BandeauResultat(aire, perimetre, "${points.size} points" + if (facteur != 1.0) " · Étalonné ${MesureSurface.textePourcentage(facteur)}" else "")
                 val cotes = MesureSurface.cotesEspace(points, points.size >= 3).map { MesureSurface.longueurEtalonnee(it, facteur) }
@@ -343,7 +367,8 @@ private fun MesureEnDirect(retour: () -> Unit, versPhoto: () -> Unit) {
                 Tuile(Icons.Filled.Stop, "Terminer", Rouge, actif = points.size >= 2) { terminer() }
                 Tuile(Icons.Filled.BookmarkAdd, "Enregistrer", Vert, actif = points.size >= 2) { dialogue = "enregistrer" }
             } else {
-                Tuile(Icons.Filled.PlayArrow, "Reprendre", Vert) { termine = null; blocage = ar.demarrer(); Toast.makeText(c, "Mesure reprise : caméra relancée.", Toast.LENGTH_SHORT).show() }
+                Tuile(Icons.Filled.Edit, "Corriger les points", Orange, actif = images.isNotEmpty() && !corrige) { corrige = true }
+                Tuile(Icons.Filled.PlayArrow, "Reprendre", Vert) { termine = null; corrige = false; blocage = ar.demarrer(); if (correctionFaite && blocage == null) ar.remplacer(points); correctionFaite = false; Toast.makeText(c, "Mesure reprise : caméra relancée.", Toast.LENGTH_SHORT).show() }
                 Tuile(Icons.Filled.BookmarkAdd, "Enregistrer", Vert) { dialogue = "enregistrer" }
                 Tuile(Icons.Filled.ContentCopy, "Copier", Bleu, actif = perimetre != null) {
                     val ecarts = texteEcarts(objectif, MesureSurface.cotesEspace(points, points.size >= 3).map { MesureSurface.longueurEtalonnee(it, facteur) }, aire)
@@ -366,6 +391,68 @@ private fun MesureEnDirect(retour: () -> Unit, versPhoto: () -> Unit) {
             cotes = MesureSurface.nombresVersTexte(MesureSurface.cotesEspace(points, ferme).map { MesureSurface.longueurEtalonnee(it, facteur) }),
             aire = aire, perimetre = perimetre, facteur = facteur, creeLe = System.currentTimeMillis(), objectif = MesureSurface.objectifVersTexte(objectif)))
         dialogue = ""
+    }
+}
+
+/**
+ * CORRECTION DES POINTS sur l'IMAGE FIGÉE (v1.56, propriétaire 21/11/2026 : « si la main tremblait, déplacer les points sur l'image gardée au 1er point »).
+ * On voit la photo prise quand le point a été posé, avec les points et les côtés ; on GLISSE un point pour le placer exactement sur l'angle de l'objet. Le point garde son plan
+ * (celui du contour) ; longueurs et surface se recalculent en direct. « Valider » garde les corrections, « Annuler » les abandonne.
+ */
+@Composable
+private fun CorrectionPoints(instantanes: List<MesureAr.Instantane>, points: List<MesureSurface.P3>, facteur: Double, valider: (List<MesureSurface.P3>) -> Unit, fermer: () -> Unit) {
+    var pts by remember { mutableStateOf(points) }
+    // Image qui montre le plus de points ; « Autre image » permet de changer
+    var indice by remember { mutableStateOf(instantanes.indices.maxByOrNull { i -> points.count { p -> MesureSurface.versEcran(p, instantanes[i].vue, instantanes[i].projection, instantanes[i].largeur, instantanes[i].hauteur)?.let { e -> e.x in 0.0..instantanes[i].largeur.toDouble() && e.y in 0.0..instantanes[i].hauteur.toDouble() } == true } } ?: 0) }
+    val img = instantanes[indice]
+    fun ecran(p: MesureSurface.P3) = MesureSurface.versEcran(p, img.vue, img.projection, img.largeur, img.hauteur)
+    fun visible(e: P2?) = e != null && e.x in 0.0..img.largeur.toDouble() && e.y in 0.0..img.hauteur.toDouble()
+    val cachés = pts.count { !visible(ecran(it)) }
+    val aire = if (pts.size >= 3) MesureSurface.aireEtalonnee(MesureSurface.aireEspace(pts), facteur) else null
+    val peri = MesureSurface.longueurEtalonnee(MesureSurface.perimetreEspace(pts, ferme = pts.size >= 3), facteur)
+    Column(Modifier.fillMaxSize().background(Color.Black)) {
+        Box(Modifier.weight(1f).fillMaxWidth().clipToBounds()) {
+            Image(img.image.asImageBitmap(), "Image figée au moment de la pose des points", contentScale = ContentScale.FillBounds, modifier = Modifier.fillMaxSize())
+            Canvas(Modifier.fillMaxSize().pointerInput(indice) {
+                var cible = -1; var depart = Offset.Zero; var total = Offset.Zero
+                detectDragGestures(
+                    onDragStart = { o ->
+                        val ech = size.width.toFloat() / img.largeur
+                        // Point visible le plus proche du doigt (rayon 56 dp)
+                        val proche = pts.indices.mapNotNull { i -> ecran(pts[i])?.takeIf { visible(it) }?.let { e -> i to hypot(e.x * ech - o.x, e.y * ech - o.y) } }.minByOrNull { it.second }
+                        if (proche != null && proche.second < 56.dp.toPx()) { cible = proche.first; ecran(pts[cible])!!.let { depart = Offset((it.x * ech).toFloat(), (it.y * ech).toFloat()) }; total = Offset.Zero } else cible = -1
+                    },
+                    onDrag = { changement, delta ->
+                        if (cible >= 0) {
+                            changement.consume(); total += delta
+                            val ech = img.largeur.toFloat() / size.width                       // pixels de l'écran → pixels de l'image
+                            val nouveau = MesureSurface.pointSousPixel(pts[cible], pts, ((depart.x + total.x) * ech).toDouble(), ((depart.y + total.y) * ech).toDouble(), img.largeur, img.hauteur, img.vue, img.projection)
+                            if (nouveau != null) pts = pts.toMutableList().also { it[cible] = nouveau }
+                        }
+                    },
+                    onDragEnd = { cible = -1 }, onDragCancel = { cible = -1 })
+            }) {
+                val ech = size.width / img.largeur
+                val texte = 13.sp.toPx()
+                val e = pts.map { ecran(it)?.let { p -> Offset((p.x * ech).toFloat(), (p.y * ech).toFloat()) } }
+                if (e.size >= 3 && e.all { it != null }) drawPath(Path().apply { moveTo(e[0]!!.x, e[0]!!.y); e.drop(1).forEach { lineTo(it!!.x, it.y) }; close() }, Orange.copy(alpha = 0.22f))
+                for (i in e.indices) {
+                    val j = (i + 1) % e.size; val fermeture = j == 0
+                    if (e.size >= 2 && (!fermeture || e.size >= 3)) { val a = e[i]; val b = e[j]
+                        if (a != null && b != null) { drawLine(if (fermeture) Color.White.copy(alpha = 0.7f) else Orange, a, b, strokeWidth = 2.5.dp.toPx())
+                            etiquette(Affichage.longueur(MesureSurface.longueurEtalonnee(MesureSurface.distance(pts[i], pts[j]), facteur)), (a.x + b.x) / 2, (a.y + b.y) / 2, texte, Color(0xB30B1F3A)) } }
+                }
+                e.forEachIndexed { i, o -> if (o != null) { drawCircle(Color.White, 11.dp.toPx(), o); drawCircle(if (i == 0) Vert else Orange, 8.dp.toPx(), o); drawCircle(Color.White, 2.dp.toPx(), o) } }
+            }
+            Text("Glissez un point pour le placer sur l'angle de l'objet · ${aire?.let { "Surface : ${Affichage.aire(it)}" } ?: "Longueur : ${Affichage.longueur(peri)}"}" + if (cachés > 0) " · $cachés point(s) hors de cette image" else "",
+                color = Color.White, fontSize = 13.sp, modifier = Modifier.align(Alignment.TopCenter).padding(8.dp).clip(RoundedCornerShape(10.dp)).background(Color(0x990B1F3A)).padding(horizontal = 10.dp, vertical = 5.dp))
+        }
+        Row(Modifier.fillMaxWidth().background(Color.White).padding(8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Top) {
+            Tuile(Icons.Filled.Check, "Valider", Vert) { valider(pts) }
+            Tuile(Icons.Filled.Undo, "Rétablir", Orange, actif = pts != points) { pts = points }
+            if (instantanes.size > 1) Tuile(Icons.Filled.PhotoLibrary, "Autre image ${indice + 1}/${instantanes.size}", Bleu) { indice = (indice + 1) % instantanes.size }
+            Tuile(Icons.Filled.Close, "Annuler", Rouge) { fermer() }
+        }
     }
 }
 

@@ -219,4 +219,36 @@ class MesureSurfaceTest {
         assertTrue(MesureSurface.ecartsObjectif(MesureSurface.Objectif(), listOf(1.0), 1.0).isEmpty())                // « Mesurer » : aucun écart
         assertTrue(MesureSurface.ecartsObjectif(o1, emptyList(), null).isEmpty())                       // rien de mesuré
     }
+
+    /** Caméra à l'origine regardant vers −z, projection en perspective (colonne par colonne), image 1000 × 2000. */
+    private val vueId = floatArrayOf(1f, 0f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 0f, 1f)
+    private fun perspective(fovY: Double = 1.0, ratio: Double = 0.5, near: Double = 0.1, far: Double = 100.0): FloatArray {
+        val f = 1.0 / Math.tan(fovY / 2)
+        return floatArrayOf((f / ratio).toFloat(), 0f, 0f, 0f, 0f, f.toFloat(), 0f, 0f, 0f, 0f, ((far + near) / (near - far)).toFloat(), -1f, 0f, 0f, (2 * far * near / (near - far)).toFloat(), 0f)
+    }
+
+    @Test fun un_point_deplace_sur_l_image_figee_retrouve_sa_position_dans_l_espace() {
+        val proj = perspective()
+        val contour = listOf(P3(-0.5, -0.3, -2.0), P3(0.5, -0.3, -2.0), P3(0.5, 0.3, -2.0), P3(-0.5, 0.3, -2.0))        // rectangle dans un plan frontal
+        val pixel = MesureSurface.versEcran(contour[1], vueId, proj, 1000, 2000)!!
+        // On touche exactement le pixel où se projette le point : on doit le retrouver
+        val retrouve = MesureSurface.pointSousPixel(contour[1], contour, pixel.x, pixel.y, 1000, 2000, vueId, proj)!!
+        assertEquals(0.5, retrouve.x, 1e-4); assertEquals(-0.3, retrouve.y, 1e-4); assertEquals(-2.0, retrouve.z, 1e-4)
+        // On glisse le point de 30 pixels vers la droite : il reste dans le plan du contour (z = −2), seule sa position latérale change
+        val deplace = MesureSurface.pointSousPixel(contour[1], contour, pixel.x + 30, pixel.y, 1000, 2000, vueId, proj)!!
+        assertEquals(-2.0, deplace.z, 1e-4); assertTrue(deplace.x > 0.5)
+        // Avec 2 points seulement : même profondeur que le point d'origine
+        val deux = MesureSurface.pointSousPixel(contour[0], contour.take(2), pixel.x - 60, pixel.y, 1000, 2000, vueId, proj)!!
+        assertEquals(-2.0, deux.z, 1e-4)
+    }
+
+    @Test fun inverse_de_matrice_et_normale_de_contour() {
+        val m = DoubleArray(16) { if (it % 5 == 0) 2.0 else 0.0 }                       // 2 × identité
+        val inv = MesureSurface.inverse4(m)!!
+        assertEquals(0.5, inv[0], 1e-12); assertEquals(0.0, inv[1], 1e-12)
+        assertNull(MesureSurface.inverse4(DoubleArray(16)))                                // matrice nulle : pas d'inverse
+        val n = MesureSurface.normaleContour(listOf(P3(0.0, 0.0, 0.0), P3(1.0, 0.0, 0.0), P3(1.0, 1.0, 0.0), P3(0.0, 1.0, 0.0)))!!
+        assertEquals(1.0, Math.abs(n.z), 1e-9)                                              // contour posé à plat : normale verticale
+        assertNull(MesureSurface.normaleContour(listOf(P3(0.0, 0.0, 0.0), P3(1.0, 0.0, 0.0))))
+    }
 }
