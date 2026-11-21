@@ -155,6 +155,9 @@ private fun MesureEnDirect(retour: () -> Unit, versPhoto: () -> Unit) {
         if (!ok) blocage = "La mesure a besoin de la caméra. Autorisez-la dans les réglages du téléphone (Applications → Personnel de maison → Autorisations)."
     }
     LaunchedEffect(Unit) { if (!cameraPermise) demande.launch(Manifest.permission.CAMERA) }
+    // « Terminer » (v1.52) : les points sont FIGÉS (copie), la caméra est arrêtée ; null = mesure en cours
+    var termine by remember { mutableStateOf<List<MesureSurface.P3>?>(null) }
+    val estTermine by rememberUpdatedState(termine != null)
 
     // La caméra de mesure suit la vie de l'écran : démarre quand il est au premier plan, s'arrête quand il est masqué, est libérée quand on le quitte
     val cycle = LocalLifecycleOwner.current
@@ -162,7 +165,7 @@ private fun MesureEnDirect(retour: () -> Unit, versPhoto: () -> Unit) {
         ar.surEtat = { etat = it }
         val observateur = LifecycleEventObserver { _, evenement ->
             when (evenement) {
-                Lifecycle.Event.ON_RESUME -> if (cameraPermise) blocage = ar.demarrer()
+                Lifecycle.Event.ON_RESUME -> if (cameraPermise && !estTermine) blocage = ar.demarrer()    // mesure terminée : la caméra reste éteinte
                 Lifecycle.Event.ON_PAUSE -> ar.suspendre()
                 else -> {}
             }
@@ -175,7 +178,7 @@ private fun MesureEnDirect(retour: () -> Unit, versPhoto: () -> Unit) {
     // Étalonnage (v1.51) : facteur gardé sur le téléphone ; toutes les longueurs affichées le suivent, les surfaces suivent son carré
     var facteur by remember { mutableStateOf(lireFacteur(c)) }
     var dialogue by remember { mutableStateOf("") }                      // "", "etalonner", "enregistrer"
-    val points = etat.points
+    val points = termine ?: etat.points
     val aire = if (points.size >= 3) MesureSurface.aireEtalonnee(MesureSurface.aireEspace(points), facteur) else null
     val perimetre = if (points.size >= 2) MesureSurface.longueurEtalonnee(MesureSurface.perimetreEspace(points, ferme = points.size >= 3), facteur) else null
     val prochain = if (points.isNotEmpty() && etat.reticule != null) MesureSurface.longueurEtalonnee(MesureSurface.distance(points.last(), etat.reticule!!), facteur) else null
@@ -233,18 +236,37 @@ private fun MesureEnDirect(retour: () -> Unit, versPhoto: () -> Unit) {
                 if (etat.message.isNotBlank()) Text(etat.message, color = Color.White, fontSize = 14.sp,
                     modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(Color(0xCCD64545)).padding(horizontal = 10.dp, vertical = 6.dp))
             }
+            // MESURE TERMINÉE (v1.52) : résultat figé, lisible tranquillement ; la caméra est arrêtée (batterie)
+            if (termine != null) Column(Modifier.fillMaxSize().background(BleuNuit).verticalScroll(rememberScrollState()).padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Mesure terminée", color = Orange, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                BandeauResultat(aire, perimetre, "${points.size} points" + if (facteur != 1.0) " · Étalonné ${MesureSurface.textePourcentage(facteur)}" else "")
+                val cotes = MesureSurface.cotesEspace(points, points.size >= 3).map { MesureSurface.longueurEtalonnee(it, facteur) }
+                cotes.forEachIndexed { i, l -> Text(if (cotes.size == 1) "Longueur : ${MesureSurface.texteLongueur(l)}" else "Côté ${i + 1} : ${MesureSurface.texteLongueur(l)}", color = Color.White, fontSize = 16.sp) }
+                Text("Touchez « Enregistrer » pour la garder, « Copier » pour la coller ailleurs, ou « Reprendre » pour continuer à mesurer.", color = Color(0xFFCBD5E1), fontSize = 13.sp)
+            }
         }
         // Actions : chacune a son pictogramme et sa légende
-        Row(Modifier.fillMaxWidth().background(Color.White).padding(10.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.Top) {
-            Tuile(Icons.Filled.AddLocationAlt, "Poser un point", Vert, actif = etat.surfaceVisee) { ar.poser() }
-            Tuile(Icons.Filled.Undo, "Annuler le dernier", Orange, actif = points.isNotEmpty()) { ar.annulerDernier() }
-            Tuile(Icons.Filled.RestartAlt, "Recommencer", Rouge, actif = points.isNotEmpty()) { ar.vider(); Toast.makeText(c, "Points effacés.", Toast.LENGTH_SHORT).show() }
-            Tuile(Icons.Filled.ContentCopy, "Copier", Bleu, actif = perimetre != null) {
-                copier(c, listOfNotNull(aire?.let { "Surface : ${MesureSurface.texteAire(it)}" }, perimetre?.let { "Périmètre : ${MesureSurface.texteLongueur(it)}" }).joinToString(" · "))
+        Column(Modifier.fillMaxWidth().background(Color.White).padding(10.dp)) { RangeeTuiles {
+            if (termine == null) {
+                Tuile(Icons.Filled.AddLocationAlt, "Poser un point", Vert, actif = etat.surfaceVisee) { ar.poser() }
+                Tuile(Icons.Filled.Undo, "Annuler le dernier", Orange, actif = points.isNotEmpty()) { ar.annulerDernier() }
+                Tuile(Icons.Filled.RestartAlt, "Recommencer", Rouge, actif = points.isNotEmpty()) { ar.vider(); Toast.makeText(c, "Points effacés.", Toast.LENGTH_SHORT).show() }
+                Tuile(Icons.Filled.Straighten, "Étalonner", Bleu, actif = points.size >= 2 || facteur != 1.0) { dialogue = "etalonner" }
+                Tuile(Icons.Filled.BookmarkAdd, "Enregistrer", Vert, actif = points.size >= 2) { dialogue = "enregistrer" }
+                // TERMINER : fige les points, arrête la caméra et affiche le résultat en grand
+                Tuile(Icons.Filled.Stop, "Terminer", Rouge, actif = points.size >= 2) {
+                    termine = etat.points; ar.suspendre(); Toast.makeText(c, "Mesure terminée : caméra arrêtée.", Toast.LENGTH_SHORT).show()
+                }
+            } else {
+                Tuile(Icons.Filled.PlayArrow, "Reprendre", Vert) { termine = null; blocage = ar.demarrer(); Toast.makeText(c, "Mesure reprise : caméra relancée.", Toast.LENGTH_SHORT).show() }
+                Tuile(Icons.Filled.BookmarkAdd, "Enregistrer", Vert) { dialogue = "enregistrer" }
+                Tuile(Icons.Filled.ContentCopy, "Copier", Bleu, actif = perimetre != null) {
+                    copier(c, listOfNotNull(aire?.let { "Surface : ${MesureSurface.texteAire(it)}" }, perimetre?.let { "Périmètre : ${MesureSurface.texteLongueur(it)}" }).joinToString(" · "))
+                }
+                Tuile(Icons.Filled.Straighten, "Étalonner", Bleu) { dialogue = "etalonner" }
+                Tuile(Icons.Filled.Close, "Quitter", Orange) { retour() }
             }
-            Tuile(Icons.Filled.Straighten, "Étalonner", Bleu, actif = points.size >= 2 || facteur != 1.0) { dialogue = "etalonner" }
-            Tuile(Icons.Filled.BookmarkAdd, "Enregistrer", Vert, actif = points.size >= 2) { dialogue = "enregistrer" }
-        }
+        } }
     }
     if (dialogue == "etalonner") DialogueEtalonnage(points, facteur, surFacteur = { facteur = it; ecrireFacteur(c, it) }, fermer = { dialogue = "" })
     if (dialogue == "enregistrer") DialogueEnregistrer(
