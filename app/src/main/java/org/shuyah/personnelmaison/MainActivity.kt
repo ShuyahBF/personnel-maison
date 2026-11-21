@@ -317,7 +317,9 @@ private fun Racine() {
         }
     }) { marge ->
         // Bords de l'écran : barre d'état toujours ; barre de navigation du téléphone seulement quand l'onglet du bas n'est pas affiché
-        Box(Modifier.fillMaxSize().padding(marge).statusBarsPadding().then(if (pile.isNotEmpty()) Modifier.navigationBarsPadding() else Modifier)) {
+        Column(Modifier.fillMaxSize().padding(marge).statusBarsPadding().then(if (pile.isNotEmpty()) Modifier.navigationBarsPadding() else Modifier)) {
+            if (pile.isEmpty()) BandeauMiseAJour()      // nouvelle version publiée dans ShuyahStore (v1.57)
+            Box(Modifier.fillMaxWidth().weight(1f)) {
             // ÉCRANS SENSIBLES (budget, famille, documents) : empreinte exigée si le dernier déverrouillage date de plus de 2 minutes
             val sensible = courant is Ecran.Budget || courant is Ecran.BudgetStats || courant is Ecran.Famille || courant is Ecran.FamilleLien ||
                 courant is Ecran.FicheOperation || courant is Ecran.FormOperation || courant is Ecran.PieceOperation || courant is Ecran.Piece || courant is Ecran.Document
@@ -374,6 +376,7 @@ private fun Racine() {
             }
             ChatPermanent(Modifier.align(androidx.compose.ui.Alignment.BottomStart))      // messagerie des proches : pastille ou panneau, sur tous les écrans
         }
+            }
     }
     }
 }
