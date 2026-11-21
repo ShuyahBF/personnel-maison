@@ -140,4 +140,44 @@ class MesureSurfaceTest {
         assertTrue(MesureSurface.texteVersPoints("n'importe quoi;1,2").isEmpty())             // morceaux illisibles ignorés
         assertTrue(MesureSurface.texteVersPoints("").isEmpty())
     }
+
+    @Test fun unites_d_affichage_et_saisie() {
+        assertEquals("1 160 mm", MesureSurface.texteLongueurUnite(1.16, MesureSurface.Unite.MM))
+        assertEquals("45,7 po", MesureSurface.texteLongueurUnite(1.16, MesureSurface.Unite.POUCES))
+        assertEquals("116,0 cm", MesureSurface.texteLongueurUnite(1.16, MesureSurface.Unite.CM))
+        assertEquals("42,5 cm", MesureSurface.texteLongueurUnite(0.425, MesureSurface.Unite.AUTO))
+        assertEquals("75,0 mm".replace("75,0", "75,0"), MesureSurface.texteLongueurUnite(0.075, MesureSurface.Unite.MM))   // sous 100 mm : une décimale
+        assertEquals("1 162,5 po²", MesureSurface.texteAireUnite(0.75, MesureSurface.Unite.POUCES))
+        assertEquals("7 500,0 cm²", MesureSurface.texteAireUnite(0.75, MesureSurface.Unite.CM))
+        assertEquals(1.16, MesureSurface.lireLongueur("1160", MesureSurface.Unite.MM)!!, 1e-9)
+        assertEquals(1.1684, MesureSurface.lireLongueur("46", MesureSurface.Unite.POUCES)!!, 1e-9)
+        assertEquals(1.16, MesureSurface.lireLongueur("116", MesureSurface.Unite.AUTO)!!, 1e-9)       // AUTO : saisie en centimètres
+        assertNull(MesureSurface.lireLongueur("abc", MesureSurface.Unite.MM)); assertNull(MesureSurface.lireLongueur("-3", MesureSurface.Unite.CM))
+        assertEquals(MesureSurface.Unite.POUCES, MesureSurface.uniteDepuisNom("POUCES")); assertEquals(MesureSurface.Unite.AUTO, MesureSurface.uniteDepuisNom("n'importe quoi"))
+    }
+
+    @Test fun television_de_52_pouces_comparee_au_carton() {
+        // Écran 16:9 de 52 pouces : 115,1 × 64,7 cm
+        val (l, h) = MesureSurface.ecranTelevision(52.0)
+        assertEquals(1.1511, l, 1e-3); assertEquals(0.6475, h, 1e-3)
+        // Contour mesuré (cadre compris) : 4 côtés presque égaux deux à deux ; diagonale ≈ 53 pouces
+        val r = MesureSurface.rectangleDesCotes(listOf(1.172, 0.664, 1.168, 0.668))!!
+        assertEquals(1.170, r.grand, 1e-9); assertEquals(0.666, r.petit, 1e-9)
+        assertEquals(53.0, r.diagonale / MesureSurface.POUCE_M, 0.1)
+        assertNull(MesureSurface.rectangleDesCotes(listOf(1.0, 2.0, 3.0)))
+        // Dimensions du carton : 1 160 × 670 mm ; mesuré 1 170 × 666 mm
+        val e = MesureSurface.comparer(1.160, r.grand)
+        assertEquals(0.010, e.ecartM, 1e-9); assertEquals("Conforme", e.verdict)                       // +0,9 %
+        assertEquals("+10,0 mm (+0,9 %)", MesureSurface.texteEcart(e, MesureSurface.Unite.MM))
+        assertEquals("Proche (dans la tolérance d'une mesure en réalité augmentée)", MesureSurface.comparer(1.0, 1.02).verdict)
+        assertEquals("À vérifier", MesureSurface.comparer(1.0, 1.06).verdict)
+        assertEquals("−6,0 mm (−0,6 %)", MesureSurface.texteEcart(MesureSurface.comparer(1.0, 0.994), MesureSurface.Unite.MM))
+    }
+
+    @Test fun coherence_de_la_diagonale_annoncee() {
+        assertTrue(MesureSurface.coherenceDiagonale(53.1, 52.0).startsWith("Cohérent"))
+        assertTrue(MesureSurface.coherenceDiagonale(51.5, 52.0).startsWith("Cohérent"))             // à moins de 1 po sous l'annonce : mesure imprécise tolérée
+        assertTrue(MesureSurface.coherenceDiagonale(48.0, 52.0).startsWith("Plus petit"))
+        assertTrue(MesureSurface.coherenceDiagonale(58.0, 52.0).startsWith("Plus grand"))
+    }
 }

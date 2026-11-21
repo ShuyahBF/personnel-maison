@@ -255,4 +255,86 @@ object MesureSurface {
     /** Liste de longueurs (mètres) en texte « 0.8500;1.2000 » et retour. */
     fun nombresVersTexte(v: List<Double>): String = v.joinToString(";") { String.format(Locale.US, "%.4f", it) }
     fun texteVersNombres(texte: String): List<Double> = texte.split(";").mapNotNull { it.trim().toDoubleOrNull() }
+
+    // =====================================================================================
+    // Unités d'affichage et comparaison avec des dimensions annoncées (v1.54, propriétaire 21/11/2026 : téléviseur de 52 pouces)
+    // =====================================================================================
+
+    /** Unité d'AFFICHAGE : les mesures sont toujours gardées en mètres ; seule l'unité montrée change (conversion instantanée, y compris pour les mesures enregistrées). */
+    enum class Unite(val libelle: String, val enMetres: Double) {
+        AUTO("Automatique (m, cm)", 1.0), MM("Millimètres (mm)", 0.001), CM("Centimètres (cm)", 0.01), POUCES("Pouces (po)", 0.0254)
+    }
+
+    const val POUCE_M = 0.0254
+
+    /** Unité retrouvée par son nom enregistré ; AUTO si inconnue. */
+    fun uniteDepuisNom(nom: String?): Unite = Unite.values().firstOrNull { it.name == nom } ?: Unite.AUTO
+
+    /** Longueur dans l'unité choisie : « 1 160 mm », « 116,0 cm », « 45,7 po » ; AUTO = affichage habituel (m / cm). */
+    fun texteLongueurUnite(m: Double, u: Unite): String = when (u) {
+        Unite.AUTO -> texteLongueur(m)
+        Unite.MM -> String.format(Locale.FRANCE, if (m * 1000 < 100) "%.1f mm" else "%,.0f mm", m * 1000).replace('\u202f', ' ').replace('\u00a0', ' ')
+        Unite.CM -> String.format(Locale.FRANCE, "%,.1f cm", m * 100).replace('\u202f', ' ').replace('\u00a0', ' ')
+        Unite.POUCES -> String.format(Locale.FRANCE, "%.1f po", m / POUCE_M)
+    }
+
+    /** Surface dans l'unité choisie : « 0,75 m² » (AUTO), « 7 500,0 cm² », « 750 000 mm² », « 1 162,5 po² ». */
+    fun texteAireUnite(m2: Double, u: Unite): String = when (u) {
+        Unite.AUTO -> texteAire(m2)
+        Unite.MM -> String.format(Locale.FRANCE, "%,.0f mm²", m2 * 1_000_000).replace('\u202f', ' ').replace('\u00a0', ' ')
+        Unite.CM -> String.format(Locale.FRANCE, "%,.1f cm²", m2 * 10_000).replace('\u202f', ' ').replace('\u00a0', ' ')
+        Unite.POUCES -> String.format(Locale.FRANCE, "%,.1f po²", m2 / (POUCE_M * POUCE_M)).replace('\u202f', ' ').replace('\u00a0', ' ')
+    }
+
+    /** Longueur saisie dans l'unité choisie (« 1160 » en mm, « 45,7 » en pouces) rendue en mètres ; en AUTO la saisie est en centimètres. Null si ce n'est pas un nombre positif. */
+    fun lireLongueur(texte: String, u: Unite): Double? {
+        val v = texte.trim().replace(',', '.').toDoubleOrNull() ?: return null
+        if (v <= 0.0) return null
+        return v * (if (u == Unite.AUTO) 0.01 else u.enMetres)
+    }
+
+    /** Rectangle déduit des 4 côtés d'un contour : grand côté, petit côté (moyennes des côtés opposés) et diagonale. Null si le contour n'a pas 4 côtés. */
+    data class Rectangle(val grand: Double, val petit: Double, val diagonale: Double)
+    fun rectangleDesCotes(cotes: List<Double>): Rectangle? {
+        if (cotes.size != 4) return null
+        val a = (cotes[0] + cotes[2]) / 2; val b = (cotes[1] + cotes[3]) / 2
+        return Rectangle(maxOf(a, b), minOf(a, b), hypot(a, b))
+    }
+
+    /** Écart entre une dimension annoncée et la dimension mesurée : en mètres, en pourcentage de l'annoncée, et un verdict (≤ 1 % conforme, ≤ 2,5 % proche, sinon à vérifier). */
+    data class Ecart(val ecartM: Double, val pourcent: Double, val verdict: String)
+    fun comparer(attendueM: Double, mesureeM: Double): Ecart {
+        val e = mesureeM - attendueM
+        val p = if (attendueM > 0) e / attendueM * 100 else 0.0
+        val v = when { abs(p) <= 1.0 -> "Conforme"; abs(p) <= 2.5 -> "Proche (dans la tolérance d'une mesure en réalité augmentée)"; else -> "À vérifier" }
+        return Ecart(e, p, v)
+    }
+
+    /** « +3,2 mm (+0,3 %) » : écart signé, dans l'unité choisie. */
+    fun texteEcart(e: Ecart, u: Unite): String {
+        val unite = if (u == Unite.AUTO) Unite.MM else u
+        val valeur = e.ecartM / unite.enMetres
+        val sym = when (unite) { Unite.MM -> "mm"; Unite.CM -> "cm"; else -> "po" }
+        return String.format(Locale.FRANCE, "%+.1f %s (%+.1f %%)", valeur, sym, e.pourcent).replace('-', '−')
+    }
+
+    /** Dimensions de l'ÉCRAN d'un téléviseur annoncé en pouces (diagonale), pour un format donné (16:9 par défaut) : (largeur, hauteur) en mètres. */
+    fun ecranTelevision(diagonalePouces: Double, ratioL: Double = 16.0, ratioH: Double = 9.0): Pair<Double, Double> {
+        val d = diagonalePouces * POUCE_M
+        val h = hypot(ratioL, ratioH)
+        return Pair(d * ratioL / h, d * ratioH / h)
+    }
+
+    /**
+     * Une diagonale de téléviseur annoncée en pouces désigne l'ÉCRAN seul ; le contour mesuré (cadre compris) est un peu plus grand : de 0 à environ 3 pouces de plus est normal.
+     * Rend une phrase de verdict ; `mesureePouces` = diagonale du contour mesuré.
+     */
+    fun coherenceDiagonale(mesureePouces: Double, annoncePouces: Double): String {
+        val d = mesureePouces - annoncePouces
+        return when {
+            d < -1.0 -> "Plus petit qu'un téléviseur de ${String.format(Locale.FRANCE, "%.0f", annoncePouces)} pouces : vérifiez la mesure ou le modèle."
+            d <= 3.0 -> "Cohérent avec un téléviseur de ${String.format(Locale.FRANCE, "%.0f", annoncePouces)} pouces (le cadre ajoute normalement 1 à 3 pouces à la diagonale de l'écran)."
+            else -> "Plus grand qu'un téléviseur de ${String.format(Locale.FRANCE, "%.0f", annoncePouces)} pouces : il s'agit peut-être d'un modèle plus grand, ou d'un cadre très large."
+        }
+    }
 }
