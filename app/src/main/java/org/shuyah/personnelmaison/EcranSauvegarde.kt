@@ -1,5 +1,7 @@
 package org.shuyah.personnelmaison
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -45,6 +47,12 @@ fun EcranSauvegarde(retour: () -> Unit) = Page("Sauvegarde en ligne", retour) {
     var dernier by remember { mutableLongStateOf(SauvegardeEnLigne.dernierEnvoi(c)) }
     var phrase by remember { mutableStateOf("") }
     var identifiant by remember { mutableStateOf("") }                                     // e-mail ou téléphone : mélangé à la phrase pour que le casier soit UNIQUE à la personne (1.60)
+    // Copie de sécurité sur le téléphone (1.61) : "creer" | "lire" = fenêtre ouverte ; octets en attente d'enregistrement ou de lecture
+    var copie by remember { mutableStateOf<String?>(null) }
+    var octetsCopie by remember { mutableStateOf<ByteArray?>(null) }
+    var octetsLus by remember { mutableStateOf<ByteArray?>(null) }
+    var copieFaite by remember { mutableStateOf(SauvegardeEnLigne.copieLocaleRecente(c)) }
+    val aMigrer = SauvegardeEnLigne.aMigrer(c)
     var autre by remember { mutableStateOf<Pair<String, SauvegardeEnLigne.Existante>?>(null) }   // « activer » | « sauvegarder » + sauvegarde d'un AUTRE appareil trouvée dans le casier
     var confirmation by remember { mutableStateOf("") }
     var occupe by remember { mutableStateOf(false) }
@@ -65,10 +73,64 @@ fun EcranSauvegarde(retour: () -> Unit) = Page("Sauvegarde en ligne", retour) {
         }
     }
 
+    // Choix de l'emplacement du fichier de copie (Documents, carte SD…) puis écriture : l'application n'a besoin d'AUCUNE autorisation de stockage
+    val creerFichier = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
+        val octets = octetsCopie
+        if (uri != null && octets != null) {
+            portee.launch {
+                val r = try { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { c.contentResolver.openOutputStream(uri)?.use { it.write(octets) } ?: throw java.io.IOException("emplacement illisible") }
+                    SauvegardeEnLigne.copieLocaleFaite(c); copieFaite = true; SauvegardeEnLigne.Resultat(true, "Copie de sécurité enregistrée (${octets.size / 1024} Ko, chiffrée). Gardez ce fichier en lieu sûr.") }
+                catch (e: Exception) { SauvegardeEnLigne.Resultat(false, "Enregistrement du fichier impossible : ${e.message ?: e.javaClass.simpleName}") }
+                message = r.message; annoncer(c, r.message, true); octetsCopie = null
+            }
+        } else { octetsCopie = null; if (uri == null) annoncer(c, "Enregistrement annulé : aucune copie n'a été faite") }
+    }
+    val ouvrirFichier = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) portee.launch {
+            try { octetsLus = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { c.contentResolver.openInputStream(uri)?.use { it.readBytes() } }; copie = "lire" }
+            catch (e: Exception) { message = "Lecture du fichier impossible : ${e.message ?: e.javaClass.simpleName}"; annoncer(c, message!!, true) }
+        }
+    }
+
     Carte("Pourquoi sauvegarder ?", Icons.Filled.CloudUpload) {
         Text("Toutes vos données (personnel, pointages, portefeuille, pièces, réglages) sont copiées EN LIGNE, chiffrées sur ce téléphone avec votre phrase secrète. " +
             "Après une désinstallation, un changement de téléphone ou de version, il suffit de retaper la phrase pour tout retrouver. Le serveur ne peut rien lire.", fontSize = 15.sp, color = BleuNuit)
     }
+
+    // SÉCURISER LA SAUVEGARDE EN LIGNE (1.61) : une sauvegarde d'avant la 1.60 n'a pas d'identifiant. Étape 1 : copie de sécurité sur ce téléphone ; étape 2 : e-mail ou téléphone + phrase.
+    if (aMigrer) {
+        Carte("Sécuriser ma sauvegarde en ligne", Icons.Filled.Shield) {
+            Text("Votre sauvegarde actuelle n'est liée à aucun e-mail ni téléphone : une autre personne ayant la même phrase tomberait sur le même casier. En 2 étapes, vos données passent dans un casier qui n'est qu'à vous. Rien n'est perdu : l'ancienne sauvegarde n'est effacée qu'après vérification de la nouvelle.", fontSize = 15.sp, color = BleuNuit)
+            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Icon(if (copieFaite) Icons.Filled.CheckCircle else Icons.Filled.RadioButtonUnchecked, null, tint = if (copieFaite) Vert else Gris, modifier = Modifier.size(22.dp))
+                Text("  1. Copie de sécurité sur ce téléphone " + if (copieFaite) "(faite)" else "(à faire d'abord)", fontSize = 16.sp, color = BleuNuit)
+            }
+            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Icon(Icons.Filled.RadioButtonUnchecked, null, tint = Gris, modifier = Modifier.size(22.dp))
+                Text("  2. Votre e-mail ou téléphone et votre phrase", fontSize = 16.sp, color = BleuNuit)
+            }
+        }
+        if (!copieFaite) GrosBouton(Icons.Filled.SaveAlt, "1. Faire la copie de sécurité", Orange, actif = !occupe) { copie = "creer"; phrase = ""; confirmation = "" }
+        else {
+            Carte { OutlinedTextField(value = identifiant, onValueChange = { identifiant = it }, label = { Text("Votre e-mail ou numéro de téléphone") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                supportingText = { Text("Avec l'indicatif pour un numéro (ex. +226 70 00 00 00).") })
+                ChampPhrase("Phrase secrète (la même ou une nouvelle)", phrase) { phrase = it }
+                ChampPhrase("Confirmez la phrase secrète", confirmation) { confirmation = it }
+                if (phrase.isNotEmpty()) GardeFouPhrase.verifier(phrase, identifiant).raisons.forEach { Text("• $it", fontSize = 14.sp, color = Rouge) }
+                if (confirmation.isNotEmpty() && SauvegardeCrypto.normaliser(confirmation) != SauvegardeCrypto.normaliser(phrase)) Text("Les deux phrases ne sont pas identiques.", fontSize = 14.sp, color = Rouge) }
+            val pretMigration = SauvegardeCrypto.identifiantValide(identifiant) && GardeFouPhrase.verifier(phrase, identifiant).acceptable && SauvegardeCrypto.normaliser(confirmation) == SauvegardeCrypto.normaliser(phrase)
+            GrosBouton(Icons.Filled.Lock, "2. Passer à mon identifiant", Vert, actif = pretMigration && !occupe) {
+                lancer("Passage en cours (envoi puis vérification en ligne)…", { SauvegardeEnLigne.migrer(c, phrase, identifiant) }) { if (it.ok) { phrase = ""; confirmation = "" } }
+            }
+        }
+    }
+    // COPIE DE SÉCURITÉ SUR LE TÉLÉPHONE : un fichier chiffré, enregistré où l'on veut, qui survit à une désinstallation
+    Carte("Copie de sécurité sur ce téléphone", Icons.Filled.SaveAlt) {
+        Text("Enregistre TOUTES vos données dans un fichier chiffré (votre e-mail ou téléphone + votre phrase), à l'endroit que vous choisissez (Documents, carte SD…). Il reste sur le téléphone même si l'application est désinstallée, et se restaure ensuite, sans connexion.", fontSize = 15.sp, color = BleuNuit)
+        if (SauvegardeEnLigne.derniereCopieLocale(c) > 0) Ligne("Dernière copie", dateLisible(SauvegardeEnLigne.derniereCopieLocale(c)))
+    }
+    GrosBouton(Icons.Filled.SaveAlt, "Enregistrer une copie chiffrée", Orange, actif = !occupe) { copie = "creer"; phrase = ""; confirmation = "" }
+    GrosBouton(Icons.Filled.FolderOpen, "Restaurer depuis un fichier", Bleu, actif = !occupe) { phrase = ""; ouvrirFichier.launch(arrayOf("*/*")) }
 
     if (cloud) {
         Carte("Sauvegarde en ligne activée", Icons.Filled.CloudDone) {
@@ -119,6 +181,35 @@ fun EcranSauvegarde(retour: () -> Unit) = Page("Sauvegarde en ligne", retour) {
     }
     if (occupe) Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) { CircularProgressIndicator(Modifier.size(24.dp)); Text("  Opération en cours…", fontSize = 16.sp, color = Bleu) }
     message?.let { Carte { Text(it, fontSize = 16.sp, color = BleuNuit) } }
+
+    // Fenêtre « copie de sécurité » : identifiant + phrase (avec garde-fou), puis choix de l'emplacement du fichier ; ou lecture d'un fichier choisi
+    when (copie) {
+        "creer" -> AlertDialog(onDismissRequest = { copie = null }, title = { Text("Copie de sécurité chiffrée") },
+            text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Retenez bien ces deux informations : sans elles, le fichier est illisible pour tout le monde.", fontSize = 14.sp, color = Gris)
+                OutlinedTextField(value = identifiant, onValueChange = { identifiant = it }, label = { Text("E-mail ou téléphone") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                ChampPhrase("Phrase secrète", phrase) { phrase = it }
+                ChampPhrase("Confirmez la phrase", confirmation) { confirmation = it }
+                if (phrase.isNotEmpty()) GardeFouPhrase.verifier(phrase, identifiant).raisons.forEach { Text("• $it", fontSize = 14.sp, color = Rouge) }
+            } },
+            confirmButton = { Tuile(Icons.Filled.SaveAlt, "Créer", Vert, actif = !occupe && SauvegardeCrypto.identifiantValide(identifiant) && GardeFouPhrase.verifier(phrase, identifiant).acceptable && SauvegardeCrypto.normaliser(confirmation) == SauvegardeCrypto.normaliser(phrase)) {
+                copie = null
+                lancer("Préparation de la copie (vérification des données)…", { val (o, r) = SauvegardeEnLigne.preparerCopieLocale(c, phrase, identifiant); octetsCopie = o; r }) { r -> if (r.ok) { phrase = ""; confirmation = ""; creerFichier.launch(SauvegardeEnLigne.nomCopieLocale()) } }
+            } },
+            dismissButton = { Tuile(Icons.Filled.Close, "Annuler", Orange) { copie = null } })
+        "lire" -> AlertDialog(onDismissRequest = { copie = null; octetsLus = null }, title = { Text("Lire la copie de sécurité") },
+            text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Saisissez l'e-mail ou le téléphone ET la phrase utilisés pour créer la copie (copie d'avant la 1.60 : e-mail vide).", fontSize = 14.sp, color = Gris)
+                OutlinedTextField(value = identifiant, onValueChange = { identifiant = it }, label = { Text("E-mail ou téléphone") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                ChampPhrase("Phrase secrète", phrase) { phrase = it }
+            } },
+            confirmButton = { Tuile(Icons.Filled.Search, "Vérifier", Vert, actif = !occupe && SauvegardeCrypto.phraseValide(phrase) && (identifiant.isBlank() || SauvegardeCrypto.identifiantValide(identifiant))) {
+                val o = octetsLus; copie = null; octetsLus = null
+                if (o != null && !occupe) { occupe = true; message = null; annoncer(c, "Lecture et vérification en cours…")
+                    portee.launch { val (ap, r) = SauvegardeEnLigne.apercuDepuisFichier(c, o, phrase, identifiant); occupe = false; if (ap != null) apercu = ap else { message = r.message; annoncer(c, r.message, true) } } }
+            } },
+            dismissButton = { Tuile(Icons.Filled.Close, "Annuler", Orange) { copie = null; octetsLus = null } })
+    }
 
     // AUTRE APPAREIL (1.60) : le casier contient déjà une sauvegarde faite par une autre installation. Jamais écrasée en silence.
     autre?.let { (quoi, e) ->

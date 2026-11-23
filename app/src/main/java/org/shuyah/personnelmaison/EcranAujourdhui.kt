@@ -44,6 +44,9 @@ fun EcranAujourdhui(ouvrir: (Ecran) -> Unit, grosTexte: Boolean, surGrosTexte: (
         if (SauvegardeEnLigne.mode(c) == null) Carte(modifier = Modifier.clickable { ouvrir(Ecran.Sauvegarde) }) {
             Text("Protégez vos données : activez la sauvegarde en ligne (ou restaurez-la après une réinstallation).", fontSize = 15.sp, color = Vert)
         }
+        if (SauvegardeEnLigne.aMigrer(c)) Carte(modifier = Modifier.clickable { ouvrir(Ecran.Sauvegarde) }) {
+            Text("Sauvegarde à sécuriser : liez-la à votre e-mail ou téléphone (2 minutes, rien n'est perdu).", fontSize = 15.sp, color = Orange)
+        }
         if (profil?.nom.isNullOrBlank()) Carte(modifier = Modifier.clickable { ouvrir(Ecran.Profil) }) {
             Text("Complétez votre profil : nom, téléphone, adresse, position…", fontSize = 15.sp, color = Bleu)
         }
