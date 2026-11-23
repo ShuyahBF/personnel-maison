@@ -101,7 +101,21 @@ private object Affichage {
     var unite by mutableStateOf(MesureSurface.Unite.AUTO)
     fun longueur(m: Double) = MesureSurface.texteLongueurUnite(m, unite)
     fun aire(m2: Double) = MesureSurface.texteAireUnite(m2, unite)
-    fun charger(c: Context) { unite = MesureSurface.uniteDepuisNom(c.getSharedPreferences("mesure", Context.MODE_PRIVATE).getString("unite", null)) }
+    fun charger(c: Context) {
+        unite = MesureSurface.uniteDepuisNom(c.getSharedPreferences("mesure", Context.MODE_PRIVATE).getString("unite", null))
+        toucherAuMarqueur = c.getSharedPreferences("mesure", Context.MODE_PRIVATE).getString("toucher", "marqueur") != "endroit"   // défaut : au marqueur
+    }
+    /**
+     * Comportement d'un TOUCHER sur l'écran (v1.59), au choix, gardé sur le téléphone :
+     *  - « marqueur » (PAR DÉFAUT) : le toucher pose un point là où se trouve le MARQUEUR (viseur au centre de l'écran), comme le bouton « Poser un point » ;
+     *  - « endroit » : le toucher pose un point à l'endroit précis touché sur l'image.
+     */
+    var toucherAuMarqueur by mutableStateOf(true)
+    fun basculerToucher(c: Context) {
+        toucherAuMarqueur = !toucherAuMarqueur
+        c.getSharedPreferences("mesure", Context.MODE_PRIVATE).edit().putString("toucher", if (toucherAuMarqueur) "marqueur" else "endroit").apply()
+        Toast.makeText(c, if (toucherAuMarqueur) "Toucher l'écran : pose le point au marqueur." else "Toucher l'écran : pose le point à l'endroit touché.", Toast.LENGTH_LONG).show()
+    }
     fun choisir(c: Context, u: MesureSurface.Unite) { unite = u; c.getSharedPreferences("mesure", Context.MODE_PRIVATE).edit().putString("unite", u.name).apply() }
     /** Symbole court : « m/cm », « mm », « cm », « po ». */
     val symbole: String get() = when (unite) { MesureSurface.Unite.AUTO -> "cm"; MesureSurface.Unite.MM -> "mm"; MesureSurface.Unite.CM -> "cm"; MesureSurface.Unite.POUCES -> "po" }
@@ -282,7 +296,7 @@ private fun MesureEnDirect(retour: () -> Unit, versPhoto: () -> Unit) {
                         val e = etatActuel; val rayon = 48.dp.toPx()
                         // Un toucher tout près d'un point existant ne pose rien (il servira à le glisser)
                         val surUnPoint = e.points.any { p -> MesureSurface.versEcran(p, e.vue, e.projection, size.width, size.height)?.let { hypot(it.x - o.x, it.y - o.y) < rayon } == true }
-                        if (!surUnPoint) ar.poser(o.x, o.y)
+                        if (!surUnPoint) { if (Affichage.toucherAuMarqueur) ar.poser() else ar.poser(o.x, o.y) }      // selon le réglage « Toucher » (défaut : au marqueur)
                     }
                 }
                 .pointerInput(Unit) {
@@ -362,6 +376,8 @@ private fun MesureEnDirect(retour: () -> Unit, versPhoto: () -> Unit) {
                     else permissionMicro.launch(Manifest.permission.RECORD_AUDIO)
                 }
                 Tuile(Icons.Filled.Flag, "Objectif", Bleu) { dialogue = "objectif" }
+                // Comportement du toucher : au marqueur (défaut) ou à l'endroit touché ; la légende dit le choix actuel
+                Tuile(Icons.Filled.TouchApp, if (Affichage.toucherAuMarqueur) "Toucher : marqueur" else "Toucher : endroit", Bleu) { Affichage.basculerToucher(c) }
                 Tuile(Icons.Filled.AddLocationAlt, "Poser un point", Vert, actif = etat.surfaceVisee) { ar.poser() }
                 // TERMINER : fige les points, arrête la caméra et affiche le résultat en grand
                 Tuile(Icons.Filled.Stop, "Terminer", Rouge, actif = points.size >= 2) { terminer() }
