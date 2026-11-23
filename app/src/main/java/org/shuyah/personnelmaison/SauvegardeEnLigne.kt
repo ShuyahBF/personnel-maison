@@ -205,7 +205,7 @@ object SauvegardeEnLigne {
     // ---------------------------------------------------------------- restauration
     /** Ce que contient la sauvegarde (vérifié en rouvrant sa base) et ce que contient ce téléphone : montré AVANT de remplacer quoi que ce soit. */
     class Apercu(val entrees: Map<String, ByteArray>, val cles: SauvegardeCrypto.Cles, val sauvegarde: Map<String, Long>, val pieces: Int, val telephone: Map<String, Long>,
-                 val identifiant: String = "", val appareil: String? = null, val ancienne: Boolean = false) {
+                 val identifiant: String = "", val appareil: String? = null, val ancienne: Boolean = false, val fichier: Boolean = false) {
         val vide get() = total(sauvegarde) == 0L
         val telephoneVide get() = total(telephone) == 0L
     }
@@ -229,14 +229,76 @@ object SauvegardeEnLigne {
                 r.body!!.bytes()
             }
         }
+        analyser(c, chiffre, cl, if (ancienne) "" else identifiant, infos?.appareil, ancienne, fichier = false)
+    } catch (e: Erreur) { Pair(null, Resultat(false, e.message ?: "Restauration impossible")) } catch (e: Exception) { Pair(null, Resultat(false, "Restauration impossible : ${e.message ?: e.javaClass.simpleName}")) }
+
+    /** Déchiffre et VÉRIFIE une valise (reçue du serveur ou lue dans un fichier) sans rien modifier sur le téléphone. Même contrôle dans les deux cas. */
+    private suspend fun analyser(c: Context, chiffre: ByteArray, cl: SauvegardeCrypto.Cles, identifiant: String, appareil: String?, ancienne: Boolean, fichier: Boolean): Pair<Apercu?, Resultat> {
         val entrees = try { SauvegardeCrypto.ouvrir(SauvegardeCrypto.dechiffrer(cl.chiffre, chiffre)) } catch (e: IllegalArgumentException) { throw Erreur(e.message ?: "Phrase secrète inexacte") }
         if (entrees["manifeste"]?.let { String(it).startsWith("personnel-maison;") } != true || entrees["base/${Base.NOM_FICHIER}"] == null || entrees["secrets/cle_base"] == null)
             throw Erreur("Cette sauvegarde n'est pas celle de Personnel de maison")
         val (sauv, tel) = withContext(Dispatchers.IO) {
             Pair(Base.compterCopie(c, entrees["base/${Base.NOM_FICHIER}"]!!, entrees["base/${Base.NOM_FICHIER}-wal"], String(entrees["secrets/cle_base"]!!)), Base.compterLive(c))
         }
-        Pair(Apercu(entrees, cl, sauv, entrees.keys.count { it.startsWith("pieces/") }, tel, if (ancienne) "" else identifiant, infos?.appareil, ancienne), Resultat(true, ""))
-    } catch (e: Erreur) { Pair(null, Resultat(false, e.message ?: "Restauration impossible")) } catch (e: Exception) { Pair(null, Resultat(false, "Restauration impossible : ${e.message ?: e.javaClass.simpleName}")) }
+        return Pair(Apercu(entrees, cl, sauv, entrees.keys.count { it.startsWith("pieces/") }, tel, identifiant, appareil, ancienne, fichier), Resultat(true, ""))
+    }
+
+    // ---------------------------------------------------------------- COPIE DE SÉCURITÉ SUR LE TÉLÉPHONE (version 1.61, demande du propriétaire)
+    // Un FICHIER chiffré (même valise, même chiffrement AES-256-GCM que la sauvegarde en ligne) enregistré où la personne le choisit (Documents, carte SD…) : il survit à la
+    // désinstallation de l'application et permet de ne rien perdre pendant le passage à l'identifiant (e-mail ou téléphone). Il se restaure ensuite, en ligne comprise.
+    // Format : « PMSV » + version (1) + mode (1 = phrase seule d'avant la 1.60, 2 = identifiant + phrase) puis la valise chiffrée.
+    private val MAGIE_FICHIER = "PMSV".toByteArray()
+    fun nomCopieLocale(): String = "personnel-maison-" + java.text.SimpleDateFormat("yyyy-MM-dd-HHmm", java.util.Locale.FRANCE).format(java.util.Date()) + ".pmsauv"
+    fun derniereCopieLocale(c: Context): Long = reglages(c).getLong("sauv_copie_locale", 0L)
+    fun copieLocaleFaite(c: Context) { reglages(c).edit().putLong("sauv_copie_locale", System.currentTimeMillis()).apply() }
+    /** Une copie de sécurité a-t-elle été enregistrée ces dernières 24 heures ? (condition pour passer à l'identifiant) */
+    fun copieLocaleRecente(c: Context) = System.currentTimeMillis() - derniereCopieLocale(c) < INTERVALLE_AUTO_MS
+
+    /** Photographie VÉRIFIÉE de toutes les données (même contrôle que la sauvegarde en ligne), chiffrée avec identifiant + phrase : octets du fichier à enregistrer. */
+    suspend fun preparerCopieLocale(c: Context, phrase: String, identifiant: String): Pair<ByteArray?, Resultat> = try {
+        val cles = withContext(Dispatchers.Default) { SauvegardeCrypto.deriver(phrase, identifiant) }
+        val (entrees, comptes) = instantane(c)
+        val valise = withContext(Dispatchers.IO) { SauvegardeCrypto.chiffrer(cles.chiffre, SauvegardeCrypto.archiver(entrees)) }
+        Pair(MAGIE_FICHIER + byteArrayOf(1, 2) + valise, Resultat(true, "Copie prête : ${resumer(comptes, entrees.keys.count { it.startsWith("pieces/") })} (${valise.size / 1024} Ko, chiffrée)"))
+    } catch (e: Erreur) { Pair(null, Resultat(false, e.message ?: "Copie impossible")) } catch (e: Exception) { Pair(null, Resultat(false, "Copie impossible : ${e.message ?: e.javaClass.simpleName}")) }
+
+    /** Lit un fichier de copie de sécurité : déchiffre avec identifiant + phrase (ou phrase seule pour une copie d'avant la 1.60) et VÉRIFIE, sans rien modifier. */
+    suspend fun apercuDepuisFichier(c: Context, octets: ByteArray, phrase: String, identifiant: String): Pair<Apercu?, Resultat> = try {
+        if (octets.size < 8 || !octets.copyOfRange(0, 4).contentEquals(MAGIE_FICHIER)) throw Erreur("Ce fichier n'est pas une copie de sécurité de Personnel de maison")
+        val ancienne = octets[5] == 1.toByte()
+        val cles = withContext(Dispatchers.Default) { if (ancienne) SauvegardeCrypto.deriver(phrase) else SauvegardeCrypto.deriver(phrase, identifiant) }
+        analyser(c, octets.copyOfRange(6, octets.size), cles, if (ancienne) "" else identifiant, null, ancienne, fichier = true)
+    } catch (e: Erreur) { Pair(null, Resultat(false, e.message ?: "Lecture impossible")) } catch (e: Exception) { Pair(null, Resultat(false, "Lecture impossible : ${e.message ?: e.javaClass.simpleName}")) }
+
+    // ---------------------------------------------------------------- PASSAGE À L'IDENTIFIANT d'une sauvegarde en ligne ancienne (phrase seule)
+    /** Vrai si la sauvegarde en ligne est active mais SANS identifiant (avant la 1.60) : à sécuriser. */
+    fun aMigrer(c: Context) = actif(c) && identifiant(c) == null
+
+    /**
+     * Envoie les données actuelles dans le NOUVEAU casier (identifiant + phrase), vérifie qu'il est bien lu en ligne, retient les nouvelles clés, puis efface l'ANCIEN casier (phrase seule).
+     * Rien n'est perdu en cas d'échec : tant que le nouveau casier n'est pas vérifié, les anciennes clés restent en place et l'ancien casier n'est pas touché.
+     */
+    suspend fun migrer(c: Context, phrase: String, identifiant: String, forcer: Boolean = false): Resultat = try {
+        val secrets = Base.secrets(c)
+        val ancienId = secrets.getString("sauv_id", null); val ancienJeton = secrets.getString("sauv_jeton", null); val ancienChiffre = secrets.getString("sauv_chiffre", null)
+        if (ancienId == null || ancienJeton == null || ancienChiffre == null) Resultat(false, "La sauvegarde en ligne n'est pas activée")
+        else {
+            val nouvelles = withContext(Dispatchers.Default) { SauvegardeCrypto.deriver(phrase, identifiant) }
+            val r = envoyer(c, nouvelles, forcer)
+            if (!r.ok) r
+            else {
+                val verifie = existante(c, nouvelles)
+                if (verifie == null) Resultat(false, "Le nouveau casier n'a pas pu être relu en ligne : rien n'a été changé, votre ancienne sauvegarde est intacte.")
+                else {
+                    retenir(c, nouvelles, identifiant)                                   // les nouvelles clés remplacent les anciennes
+                    // ancien casier : effacé seulement maintenant que le nouveau est vérifié (un échec ici est sans gravité : il reste inutilisé)
+                    val effacement = try { withContext(Dispatchers.IO) { appel(c, SauvegardeCrypto.Cles(ancienId, ancienJeton, ByteArray(32)), "DELETE").use { it.isSuccessful || it.code == 404 } } } catch (e: Erreur) { false }
+                    Resultat(true, "Sauvegarde passée à votre identifiant (${SauvegardeCrypto.masquerIdentifiant(identifiant)}) et vérifiée en ligne." +
+                        if (effacement) " L'ancienne sauvegarde (phrase seule) a été effacée." else " L'ancienne sauvegarde n'a pas pu être effacée maintenant : elle reste inutilisée.")
+                }
+            }
+        }
+    } catch (e: Erreur) { Resultat(false, e.message ?: "Passage impossible") } catch (e: Exception) { Resultat(false, "Passage impossible : ${e.message ?: e.javaClass.simpleName}") }
 
     /** Fichier (chiffré par le téléphone) où est gardée la copie de secours d'AVANT la dernière restauration. */
     private fun fichierSecours(c: Context) = File(File(c.filesDir, "avant_restauration").also { it.mkdirs() }, "donnees.enc")
@@ -251,9 +313,11 @@ object SauvegardeEnLigne {
             androidx.security.crypto.EncryptedFile.Builder(c, f, cleSecours(c), androidx.security.crypto.EncryptedFile.FileEncryptionScheme.AES256_GCM_HKDF_4KB).build()
                 .openFileOutput().use { it.write(SauvegardeCrypto.archiver(actuel)) }
             appliquer(c, a.entrees)
-            retenir(c, a.cles, a.identifiant.ifBlank { null })                          // la sauvegarde en ligne reste active avec les mêmes clés
+            // Restauration EN LIGNE : la sauvegarde reste active avec les mêmes clés. Restauration depuis un FICHIER avec identifiant : la sauvegarde en ligne est activée avec ces clés et la
+            // première sauvegarde part à la prochaine ouverture (« sauv_dernier » = 0) ; depuis un fichier ancien (phrase seule), on n'active rien de nouveau.
+            if (!(a.fichier && a.ancienne)) retenir(c, a.cles, a.identifiant.ifBlank { null })
             retenirConnu(c, a.appareil)                                                  // l'installation dont je viens de restaurer la sauvegarde n'est plus une « autre » installation
-            reglages(c).edit().putLong("sauv_dernier", System.currentTimeMillis()).apply()
+            reglages(c).edit().putLong("sauv_dernier", if (a.fichier) 0L else System.currentTimeMillis()).apply()
         }
         Resultat(true, "Données restaurées : ${resumer(a.sauvegarde, a.pieces)}" + if (a.ancienne) ". Cette sauvegarde date d'avant l'identifiant : pour la protéger d'une phrase identique chez quelqu'un d'autre, désactivez la sauvegarde puis réactivez-la avec votre e-mail ou téléphone." else "")
     } catch (e: Erreur) { Resultat(false, e.message ?: "Restauration impossible") } catch (e: Exception) { Resultat(false, "Restauration impossible : ${e.message ?: e.javaClass.simpleName}") }
