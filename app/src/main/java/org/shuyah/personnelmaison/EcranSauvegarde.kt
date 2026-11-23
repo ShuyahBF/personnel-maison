@@ -44,6 +44,8 @@ fun EcranSauvegarde(retour: () -> Unit) = Page("Sauvegarde en ligne", retour) {
     var mode by remember { mutableStateOf(SauvegardeEnLigne.mode(c)) }
     var dernier by remember { mutableLongStateOf(SauvegardeEnLigne.dernierEnvoi(c)) }
     var phrase by remember { mutableStateOf("") }
+    var identifiant by remember { mutableStateOf("") }                                     // e-mail ou téléphone : mélangé à la phrase pour que le casier soit UNIQUE à la personne (1.60)
+    var autre by remember { mutableStateOf<Pair<String, SauvegardeEnLigne.Existante>?>(null) }   // « activer » | « sauvegarder » + sauvegarde d'un AUTRE appareil trouvée dans le casier
     var confirmation by remember { mutableStateOf("") }
     var occupe by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
@@ -58,6 +60,7 @@ fun EcranSauvegarde(retour: () -> Unit) = Page("Sauvegarde en ligne", retour) {
         occupe = true; message = null; annoncer(c, enCours)
         portee.launch {
             val r = travail(); occupe = false; message = r.message; annoncer(c, r.message, true)
+            if (r.autreAppareil != null) autre = Pair(if (SauvegardeEnLigne.actif(c)) "sauvegarder" else "activer", r.autreAppareil)
             mode = SauvegardeEnLigne.mode(c); dernier = SauvegardeEnLigne.dernierEnvoi(c); apres(r)
         }
     }
@@ -70,6 +73,7 @@ fun EcranSauvegarde(retour: () -> Unit) = Page("Sauvegarde en ligne", retour) {
     if (cloud) {
         Carte("Sauvegarde en ligne activée", Icons.Filled.CloudDone) {
             Ligne("Dernière sauvegarde", dateLisible(dernier))
+            SauvegardeEnLigne.identifiant(c)?.let { Ligne("Casier lié à", SauvegardeCrypto.masquerIdentifiant(it)) }
             Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                 Icon(Icons.Filled.Autorenew, null, tint = Vert, modifier = Modifier.size(20.dp))
                 Text("  Enregistrée automatiquement une fois par jour, à l'ouverture de l'application.", fontSize = 14.sp, color = Gris)
@@ -83,19 +87,24 @@ fun EcranSauvegarde(retour: () -> Unit) = Page("Sauvegarde en ligne", retour) {
         Carte(if (mode == "local") "Ce téléphone seulement" else "Activer la sauvegarde en ligne", Icons.Filled.Key) {
             Text("Choisissez une phrase secrète d'au moins ${SauvegardeCrypto.LONGUEUR_MIN_PHRASE} caractères (plusieurs mots faciles à retenir). " +
                 "ATTENTION : si vous la perdez, personne ne pourra récupérer la sauvegarde. Notez-la sur papier et gardez-la en lieu sûr.", fontSize = 15.sp, color = BleuNuit)
+            // Identifiant (1.60) : l'e-mail OU le téléphone de la personne, mélangé à la phrase : deux personnes ne peuvent plus tomber sur le même casier, même avec la même phrase.
+            OutlinedTextField(value = identifiant, onValueChange = { identifiant = it }, label = { Text("Votre e-mail ou numéro de téléphone") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                supportingText = { Text("Avec l'indicatif pour un numéro (ex. +226 70 00 00 00). À retaper avec la phrase sur un téléphone neuf ; il ne quitte jamais ce téléphone.") })
+            if (identifiant.isNotBlank() && !SauvegardeCrypto.identifiantValide(identifiant)) Text("Saisissez une adresse e-mail valide ou un numéro de téléphone d'au moins 8 chiffres.", fontSize = 14.sp, color = Rouge)
             ChampPhrase("Phrase secrète", phrase) { phrase = it }
             ChampPhrase("Confirmez la phrase secrète", confirmation) { confirmation = it }
-            if (phrase.isNotEmpty() && !SauvegardeCrypto.phraseValide(phrase)) Text("Encore ${SauvegardeCrypto.LONGUEUR_MIN_PHRASE - SauvegardeCrypto.normaliser(phrase).length} caractère(s) au moins.", fontSize = 14.sp, color = Rouge)
+            // Garde-fou : chaque raison de refus est écrite (phrase trop courte, trop banale, reprenant l'e-mail ou le téléphone…)
+            if (phrase.isNotEmpty()) GardeFouPhrase.verifier(phrase, identifiant).raisons.forEach { Text("• $it", fontSize = 14.sp, color = Rouge) }
             if (confirmation.isNotEmpty() && SauvegardeCrypto.normaliser(confirmation) != SauvegardeCrypto.normaliser(phrase)) Text("Les deux phrases ne sont pas identiques.", fontSize = 14.sp, color = Rouge)
         }
-        val pret = SauvegardeCrypto.phraseValide(phrase) && SauvegardeCrypto.normaliser(confirmation) == SauvegardeCrypto.normaliser(phrase)
+        val pret = SauvegardeCrypto.identifiantValide(identifiant) && GardeFouPhrase.verifier(phrase, identifiant).acceptable && SauvegardeCrypto.normaliser(confirmation) == SauvegardeCrypto.normaliser(phrase)
         GrosBouton(Icons.Filled.CloudUpload, "Activer et sauvegarder", Vert, actif = pret && !occupe) {
-            lancer("Activation en cours (quelques secondes)…", { SauvegardeEnLigne.activer(c, phrase) }) { if (it.ok) { phrase = ""; confirmation = "" } }
+            lancer("Activation en cours (quelques secondes)…", { SauvegardeEnLigne.activer(c, phrase, identifiant) }) { if (it.ok) { phrase = ""; confirmation = "" } }
         }
         Carte("Réinstallation ou nouveau téléphone ?", Icons.Filled.Restore) {
-            Text("Retapez ci-dessus votre phrase secrète (une seule fois suffit), puis appuyez sur « Restaurer ». Vos données actuelles seront remplacées.", fontSize = 15.sp, color = BleuNuit)
+            Text("Retapez ci-dessus votre e-mail ou téléphone ET votre phrase secrète (une seule fois suffit), puis appuyez sur « Restaurer ». Pour une sauvegarde faite avant la version 1.60, laissez l'e-mail ou le téléphone vide. Vos données actuelles seront remplacées.", fontSize = 15.sp, color = BleuNuit)
         }
-        GrosBouton(Icons.Filled.CloudDownload, "Restaurer ma sauvegarde", Bleu, actif = SauvegardeCrypto.phraseValide(phrase) && !occupe) { confirmer = "restaurer" }
+        GrosBouton(Icons.Filled.CloudDownload, "Restaurer ma sauvegarde", Bleu, actif = SauvegardeCrypto.phraseValide(phrase) && (identifiant.isBlank() || SauvegardeCrypto.identifiantValide(identifiant)) && !occupe) { confirmer = "restaurer" }
         if (mode != "local") GrosBouton(Icons.Filled.PhoneAndroid, "Garder les données sur ce téléphone seulement", Gris, actif = !occupe) {
             SauvegardeEnLigne.choisirLocal(c); mode = "local"; annoncer(c, "Mode « ce téléphone seulement » : rien n'est envoyé en ligne", true)
         }
@@ -110,6 +119,26 @@ fun EcranSauvegarde(retour: () -> Unit) = Page("Sauvegarde en ligne", retour) {
     }
     if (occupe) Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) { CircularProgressIndicator(Modifier.size(24.dp)); Text("  Opération en cours…", fontSize = 16.sp, color = Bleu) }
     message?.let { Carte { Text(it, fontSize = 16.sp, color = BleuNuit) } }
+
+    // AUTRE APPAREIL (1.60) : le casier contient déjà une sauvegarde faite par une autre installation. Jamais écrasée en silence.
+    autre?.let { (quoi, e) ->
+        AlertDialog(onDismissRequest = { autre = null }, title = { Text("Une sauvegarde d'un autre appareil existe") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Ce casier (même identifiant et même phrase) contient déjà une sauvegarde faite le ${e.majLe.take(16).replace('T', ' ')} depuis un AUTRE appareil.", fontSize = 15.sp, color = BleuNuit)
+                    Text("• Nouveau téléphone : choisissez « Restaurer » pour retrouver vos données.", fontSize = 15.sp, color = Vert)
+                    Text("• Quelqu'un d'autre utilise la même phrase : « Remplacer » EFFACERAIT ses données. Choisissez plutôt une autre phrase.", fontSize = 15.sp, color = Rouge)
+                }
+            },
+            confirmButton = { Tuile(Icons.Filled.CloudDownload, "Restaurer", Vert) { autre = null; confirmer = "restaurer" } },
+            dismissButton = { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Tuile(Icons.Filled.Close, "Annuler", Orange) { autre = null }
+                Tuile(Icons.Filled.Warning, "Remplacer", Rouge) { autre = null
+                    if (quoi == "activer") lancer("Activation en cours (quelques secondes)…", { SauvegardeEnLigne.activer(c, phrase, identifiant, forcer = true) }) { if (it.ok) { phrase = ""; confirmation = "" } }
+                    else lancer("Sauvegarde en cours…", { SauvegardeEnLigne.sauvegarder(c, forcer = true) })
+                }
+            } })
+    }
 
     // Contenu VÉRIFIÉ de la sauvegarde : l'utilisateur compare avec ce que contient ce téléphone avant de remplacer
     apercu?.let { ap ->
@@ -136,12 +165,15 @@ fun EcranSauvegarde(retour: () -> Unit) = Page("Sauvegarde en ligne", retour) {
         "restaurer", "precedente" -> AlertDialog(onDismissRequest = { confirmer = null }, title = { Text("Vérifier la sauvegarde") },
             text = {
                 Column { Text("La sauvegarde va d'abord être téléchargée et VÉRIFIÉE. Rien n'est remplacé tant que vous n'avez pas vu son contenu et confirmé.")
-                    if (cloud) ChampPhrase("Phrase secrète", phrase) { phrase = it } }
+                    if (cloud) {
+                        OutlinedTextField(value = identifiant, onValueChange = { identifiant = it }, label = { Text("E-mail ou téléphone (vide : sauvegarde d'avant la 1.60)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                        ChampPhrase("Phrase secrète", phrase) { phrase = it }
+                    } }
             },
-            confirmButton = { Tuile(Icons.Filled.Search, "Vérifier", Vert, actif = SauvegardeCrypto.phraseValide(phrase) && !occupe) {
+            confirmButton = { Tuile(Icons.Filled.Search, "Vérifier", Vert, actif = SauvegardeCrypto.phraseValide(phrase) && (identifiant.isBlank() || SauvegardeCrypto.identifiantValide(identifiant)) && !occupe) {
                 val prec = confirmer == "precedente"; confirmer = null
                 if (!occupe) { occupe = true; message = null; annoncer(c, "Téléchargement et vérification en cours…")
-                    portee.launch { val (ap, r) = SauvegardeEnLigne.apercu(c, phrase, prec); occupe = false; if (ap != null) apercu = ap else { message = r.message; annoncer(c, r.message, true) } } }
+                    portee.launch { val (ap, r) = SauvegardeEnLigne.apercu(c, phrase, identifiant, prec); occupe = false; if (ap != null) apercu = ap else { message = r.message; annoncer(c, r.message, true) } } }
             } },
             dismissButton = { Tuile(Icons.Filled.Close, "Annuler", Orange) { confirmer = null } })
         "desactiver" -> Confirmation("Effacer la sauvegarde en ligne ?", "La sauvegarde du serveur sera DÉFINITIVEMENT effacée. Vos données restent sur ce téléphone.",
