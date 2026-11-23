@@ -27,6 +27,7 @@ import javax.crypto.spec.SecretKeySpec
 object SauvegardeCrypto {
     /** Sel fixe et public (il doit être retrouvé à partir de la seule phrase après une réinstallation). La force vient de la phrase et du nombre de tours. */
     private val SEL = "personnel-maison/sauvegarde/v1".toByteArray()
+    private const val SEL_V2 = "personnel-maison/sauvegarde/v2/"
     private const val TOURS = 200_000
     const val LONGUEUR_MIN_PHRASE = 12
 
@@ -39,8 +40,38 @@ object SauvegardeCrypto {
     /** Phrase acceptable : 12 caractères au moins (la force de la sauvegarde dépend entièrement d'elle). */
     fun phraseValide(phrase: String) = normaliser(phrase).length >= LONGUEUR_MIN_PHRASE
 
-    fun deriver(phrase: String): Cles {
-        val maitre = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(PBEKeySpec(normaliser(phrase).toCharArray(), SEL, TOURS, 256)).encoded
+    /**
+     * IDENTIFIANT DE SAUVEGARDE (version 1.60, demande du propriétaire) : l'e-mail OU le numéro de téléphone de la personne. Il est mélangé au SEL de la dérivation : deux personnes qui auraient
+     * (par hasard ou par copie) la même phrase obtiennent des casiers et des clés DIFFÉRENTS. Il ne quitte jamais le téléphone (le serveur ne reçoit que des valeurs dérivées) ;
+     * il faut le retaper avec la phrase pour restaurer sur un téléphone neuf.
+     * E-mail : sans espaces, en minuscules. Téléphone : seulement les chiffres, sans « 00 » de tête (« +226 70 00 00 00 » et « 0022670000000 » donnent « 22670000000 »).
+     */
+    fun normaliserIdentifiant(identifiant: String): String {
+        val t = Normalizer.normalize(identifiant.trim(), Normalizer.Form.NFC)
+        if (t.contains('@')) return t.replace(Regex("\\s+"), "").lowercase()
+        return t.filter { it.isDigit() }.removePrefix("00")
+    }
+
+    /** Identifiant acceptable : une adresse e-mail plausible, ou un numéro d'au moins 8 chiffres (indicatif compris). */
+    fun identifiantValide(identifiant: String): Boolean {
+        val n = normaliserIdentifiant(identifiant)
+        return if (n.contains('@')) Regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]{2,}$").matches(n) else n.length in 8..15
+    }
+
+    /** Pour afficher le casier sans révéler l'identifiant : « a***@gmail.com » ou « ***2313 ». */
+    fun masquerIdentifiant(identifiant: String): String {
+        val n = normaliserIdentifiant(identifiant)
+        return if (n.contains('@')) n.substringBefore('@').take(1) + "***@" + n.substringAfter('@') else "***" + n.takeLast(4)
+    }
+
+    /** Clés d'une sauvegarde créée AVEC identifiant (version 1.60) : sel = préfixe + identifiant normalisé. */
+    fun deriver(phrase: String, identifiant: String): Cles = deriverAvecSel((SEL_V2 + normaliserIdentifiant(identifiant)).toByteArray(), phrase)
+
+    /** Clés d'une sauvegarde d'AVANT la 1.60 (phrase seule, sel fixe) : gardées pour pouvoir restaurer les anciennes sauvegardes. */
+    fun deriver(phrase: String): Cles = deriverAvecSel(SEL, phrase)
+
+    private fun deriverAvecSel(sel: ByteArray, phrase: String): Cles {
+        val maitre = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(PBEKeySpec(normaliser(phrase).toCharArray(), sel, TOURS, 256)).encoded
         fun etiquette(nom: String): ByteArray = Mac.getInstance("HmacSHA256").apply { init(SecretKeySpec(maitre, "HmacSHA256")) }.doFinal(nom.toByteArray())
         fun hex(o: ByteArray) = o.joinToString("") { "%02x".format(it) }
         return Cles(hex(etiquette("id")), hex(etiquette("jeton")), etiquette("chiffre"))

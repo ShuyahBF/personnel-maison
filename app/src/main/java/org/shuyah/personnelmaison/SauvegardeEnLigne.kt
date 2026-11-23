@@ -42,12 +42,31 @@ object SauvegardeEnLigne {
     fun choisirLocal(c: Context) = reglages(c).edit().putString("sauv_mode", "local").apply()
 
     /** Résultat d'une opération : message lisible pour l'écran. */
-    class Resultat(val ok: Boolean, val message: String)
+    class Resultat(val ok: Boolean, val message: String, val autreAppareil: Existante? = null)
+
+    /** Ce que le serveur sait de la sauvegarde d'un casier : date, taille et l'installation (identifiant ALÉATOIRE, rien de personnel) qui l'a faite en dernier (null : sauvegarde ancienne). */
+    class Existante(val majLe: String, val taille: Long, val appareil: String?)
+
+    /** Identifiant aléatoire de CETTE installation (créé une fois, gardé dans les réglages propres à la sauvegarde : jamais copié dans la valise). */
+    fun monAppareil(c: Context): String {
+        reglages(c).getString("sauv_appareil", null)?.let { return it }
+        val id = ByteArray(16).also { java.security.SecureRandom().nextBytes(it) }.joinToString("") { "%02x".format(it) }
+        reglages(c).edit().putString("sauv_appareil", id).apply(); return id
+    }
+    /** Installations déjà « connues » pour ce casier (la mienne, ou celle dont je viens de restaurer la sauvegarde) : elles ne déclenchent pas d'avertissement. */
+    private fun connu(c: Context) = reglages(c).getString("sauv_connu", null)
+    private fun retenirConnu(c: Context, appareil: String?) { if (appareil != null) reglages(c).edit().putString("sauv_connu", appareil).apply() }
+    /** Vrai si le casier a été mis à jour en dernier par une AUTRE installation que celles que je connais : l'écraser ferait perdre ses données. */
+    fun estAutreAppareil(c: Context, e: Existante?): Boolean = e?.appareil != null && e.appareil != monAppareil(c) && e.appareil != connu(c)
+
+    /** Identifiant de sauvegarde (e-mail ou téléphone) de cette installation, gardé en clair sur le téléphone seulement (pour l'afficher masqué). */
+    fun identifiant(c: Context): String? = reglages(c).getString("sauv_identifiant", null)
     class Erreur(message: String) : Exception(message)
 
     // ---------------------------------------------------------------- serveur
-    private fun appel(cles: SauvegardeCrypto.Cles, methode: String, suffixe: String = "", corps: ByteArray? = null): okhttp3.Response {
-        val rb = Request.Builder().url("$URL_PAR_DEFAUT/api/sauvegardes/${cles.id}$suffixe").header("X-Jeton-Sauvegarde", cles.jeton).header("X-ShuyahStore", "1")
+    private fun appel(c: Context, cles: SauvegardeCrypto.Cles, methode: String, suffixe: String = "", corps: ByteArray? = null): okhttp3.Response {
+        val appareilEnvoi = monAppareil(c)
+        val rb = Request.Builder().url("$URL_PAR_DEFAUT/api/sauvegardes/${cles.id}$suffixe").header("X-Jeton-Sauvegarde", cles.jeton).header("X-ShuyahStore", "1").header("X-Appareil", appareilEnvoi)
         val requete = when (methode) {
             "PUT" -> rb.put(corps!!.toRequestBody(OCTETS)); "DELETE" -> rb.delete(); else -> rb.get()
         }.build()
@@ -59,13 +78,14 @@ object SauvegardeEnLigne {
         return Regex("\"detail\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"").find(corps)?.groupValues?.get(1)?.replace("\\\"", "\"") ?: "$repli (code ${r.code})"
     }
 
-    /** Une sauvegarde existe-t-elle déjà pour cette phrase ? Rend (date, taille) ou null. */
-    suspend fun existante(cles: SauvegardeCrypto.Cles): Pair<String, Long>? = withContext(Dispatchers.IO) {
-        appel(cles, "GET", "/info").use { r ->
+    /** Le casier de ces clés contient-il déjà une sauvegarde ? Rend ses informations ou null. */
+    suspend fun existante(c: Context, cles: SauvegardeCrypto.Cles): Existante? = withContext(Dispatchers.IO) {
+        appel(c, cles, "GET", "/info").use { r ->
             when {
                 r.code == 404 -> null
                 r.isSuccessful -> { val t = r.body?.string().orEmpty()
-                    Pair(Regex("\"maj_le\"\\s*:\\s*\"([^\"]+)\"").find(t)?.groupValues?.get(1) ?: "", Regex("\"taille\"\\s*:\\s*(\\d+)").find(t)?.groupValues?.get(1)?.toLong() ?: 0L) }
+                    Existante(Regex("\"maj_le\"\\s*:\\s*\"([^\"]+)\"").find(t)?.groupValues?.get(1) ?: "", Regex("\"taille\"\\s*:\\s*(\\d+)").find(t)?.groupValues?.get(1)?.toLong() ?: 0L,
+                        Regex("\"appareil\"\\s*:\\s*\"([0-9a-f]+)\"").find(t)?.groupValues?.get(1)) }
                 else -> throw Erreur(messageServeur(r, "Lecture de la sauvegarde impossible"))
             }
         }
@@ -116,45 +136,55 @@ object SauvegardeEnLigne {
     }
 
     /** Envoie une sauvegarde maintenant (mode « cloud » et clés présentes). */
-    suspend fun sauvegarder(c: Context): Resultat = try {
+    suspend fun sauvegarder(c: Context, forcer: Boolean = false): Resultat = try {
         val secrets = Base.secrets(c)
         val id = secrets.getString("sauv_id", null); val jeton = secrets.getString("sauv_jeton", null); val chiffre = secrets.getString("sauv_chiffre", null)
         if (id == null || jeton == null || chiffre == null) Resultat(false, "La sauvegarde en ligne n'est pas activée")
         else {
             val cles = SauvegardeCrypto.Cles(id, jeton, chiffre.chunked(2).map { it.toInt(16).toByte() }.toByteArray())
-            envoyer(c, cles)
+            envoyer(c, cles, forcer)
         }
     } catch (e: Erreur) { Resultat(false, e.message ?: "Sauvegarde impossible") } catch (e: Exception) { Resultat(false, "Sauvegarde impossible : ${e.message ?: e.javaClass.simpleName}") }
 
-    private suspend fun envoyer(c: Context, cles: SauvegardeCrypto.Cles): Resultat {
+    private suspend fun envoyer(c: Context, cles: SauvegardeCrypto.Cles, forcer: Boolean = false): Resultat {
+        // GARDE-FOU (1.60) : si une AUTRE installation a sauvegardé en dernier dans ce casier, on ne l'écrase JAMAIS en silence (sauvegarde automatique comprise) : l'écran propose de restaurer ou de remplacer.
+        if (!forcer) {
+            val e = existante(c, cles)
+            if (estAutreAppareil(c, e)) return Resultat(false, "Une sauvegarde faite depuis un AUTRE appareil (le ${e!!.majLe.take(16).replace('T', ' ')}) existe déjà pour cet identifiant et cette phrase. " +
+                "La remplacer ferait perdre ses données : restaurez-la d'abord, ou remplacez-la en connaissance de cause.", autreAppareil = e)
+        }
         val (entrees, comptes) = instantane(c)
         val pieces = entrees.keys.count { it.startsWith("pieces/") }
         val chiffre = withContext(Dispatchers.IO) { SauvegardeCrypto.chiffrer(cles.chiffre, SauvegardeCrypto.archiver(entrees)) }
         if (chiffre.size > TAILLE_MAX) return Resultat(false, "Sauvegarde trop volumineuse (${chiffre.size / (1024 * 1024)} Mo, 55 Mo au plus) : supprimez des pièces volumineuses")
         return withContext(Dispatchers.IO) {
-            appel(cles, "PUT", corps = chiffre).use { r ->
+            appel(c, cles, "PUT", corps = chiffre).use { r ->
                 if (!r.isSuccessful) Resultat(false, messageServeur(r, "Envoi refusé"))
-                else { reglages(c).edit().putLong("sauv_dernier", System.currentTimeMillis()).apply(); Resultat(true, "Sauvegarde terminée et VÉRIFIÉE : ${resumer(comptes, pieces)} (${chiffre.size / 1024} Ko, chiffrée)") }
+                else { reglages(c).edit().putLong("sauv_dernier", System.currentTimeMillis()).putString("sauv_connu", monAppareil(c)).apply(); Resultat(true, "Sauvegarde terminée et VÉRIFIÉE : ${resumer(comptes, pieces)} (${chiffre.size / 1024} Ko, chiffrée)") }
             }
         }
     }
 
-    /** Active la sauvegarde en ligne avec cette phrase : retient les clés (chiffrées) et envoie la première sauvegarde. */
-    suspend fun activer(c: Context, phrase: String): Resultat = try {
-        val cles = withContext(Dispatchers.Default) { SauvegardeCrypto.deriver(phrase) }
-        retenir(c, cles)
-        val r = envoyer(c, cles)
+    /**
+     * Active la sauvegarde en ligne avec cet IDENTIFIANT (e-mail ou téléphone) et cette phrase : retient les clés (chiffrées) et envoie la première sauvegarde.
+     * Si le casier contient déjà une sauvegarde d'un autre appareil, rien n'est écrasé : le résultat porte `autreAppareil` et l'écran propose de restaurer ou de remplacer (`forcer`).
+     */
+    suspend fun activer(c: Context, phrase: String, identifiant: String, forcer: Boolean = false): Resultat = try {
+        val cles = withContext(Dispatchers.Default) { SauvegardeCrypto.deriver(phrase, identifiant) }
+        retenir(c, cles, identifiant)
+        val r = envoyer(c, cles, forcer)
         if (!r.ok) oublier(c)
         r
     } catch (e: Erreur) { oublier(c); Resultat(false, e.message ?: "Activation impossible") } catch (e: Exception) { oublier(c); Resultat(false, "Activation impossible : ${e.message ?: e.javaClass.simpleName}") }
 
-    private fun retenir(c: Context, cles: SauvegardeCrypto.Cles) {
+    private fun retenir(c: Context, cles: SauvegardeCrypto.Cles, identifiant: String? = null) {
+        if (identifiant != null) reglages(c).edit().putString("sauv_identifiant", SauvegardeCrypto.normaliserIdentifiant(identifiant)).apply()
         Base.secrets(c).edit().putString("sauv_id", cles.id).putString("sauv_jeton", cles.jeton).putString("sauv_chiffre", cles.chiffre.joinToString("") { "%02x".format(it) }).apply()
         reglages(c).edit().putString("sauv_mode", "cloud").apply()
     }
     private fun oublier(c: Context) {
         Base.secrets(c).edit().remove("sauv_id").remove("sauv_jeton").remove("sauv_chiffre").apply()
-        reglages(c).edit().remove("sauv_mode").remove("sauv_dernier").apply()
+        reglages(c).edit().remove("sauv_mode").remove("sauv_dernier").remove("sauv_identifiant").remove("sauv_connu").apply()
     }
 
     /** Désactive : efface la sauvegarde sur le serveur (jeton exigé) puis oublie les clés. */
@@ -162,7 +192,7 @@ object SauvegardeEnLigne {
         val secrets = Base.secrets(c)
         val id = secrets.getString("sauv_id", null); val jeton = secrets.getString("sauv_jeton", null)
         if (id != null && jeton != null) withContext(Dispatchers.IO) {
-            appel(SauvegardeCrypto.Cles(id, jeton, ByteArray(32)), "DELETE").use { r -> if (!r.isSuccessful && r.code != 404) throw Erreur(messageServeur(r, "Effacement impossible")) }
+            appel(c, SauvegardeCrypto.Cles(id, jeton, ByteArray(32)), "DELETE").use { r -> if (!r.isSuccessful && r.code != 404) throw Erreur(messageServeur(r, "Effacement impossible")) }
         }
         oublier(c); reglages(c).edit().putString("sauv_mode", "local").apply()
         Resultat(true, "Sauvegarde en ligne effacée et désactivée")
@@ -174,28 +204,38 @@ object SauvegardeEnLigne {
 
     // ---------------------------------------------------------------- restauration
     /** Ce que contient la sauvegarde (vérifié en rouvrant sa base) et ce que contient ce téléphone : montré AVANT de remplacer quoi que ce soit. */
-    class Apercu(val entrees: Map<String, ByteArray>, val cles: SauvegardeCrypto.Cles, val sauvegarde: Map<String, Long>, val pieces: Int, val telephone: Map<String, Long>) {
+    class Apercu(val entrees: Map<String, ByteArray>, val cles: SauvegardeCrypto.Cles, val sauvegarde: Map<String, Long>, val pieces: Int, val telephone: Map<String, Long>,
+                 val identifiant: String = "", val appareil: String? = null, val ancienne: Boolean = false) {
         val vide get() = total(sauvegarde) == 0L
         val telephoneVide get() = total(telephone) == 0L
     }
 
     /** Télécharge, déchiffre et VÉRIFIE la sauvegarde sans rien modifier sur le téléphone. */
-    suspend fun apercu(c: Context, phrase: String, precedente: Boolean = false): Pair<Apercu?, Resultat> = try {
-        val cles = withContext(Dispatchers.Default) { SauvegardeCrypto.deriver(phrase) }
+    suspend fun apercu(c: Context, phrase: String, identifiant: String = "", precedente: Boolean = false): Pair<Apercu?, Resultat> = try {
+        // Avec identifiant : on cherche d'abord le casier « identifiant + phrase » (1.60) ; s'il n'existe pas, l'ancien casier « phrase seule » (sauvegardes d'avant la 1.60).
+        val candidates = buildList {
+            if (identifiant.isNotBlank()) add(Pair(withContext(Dispatchers.Default) { SauvegardeCrypto.deriver(phrase, identifiant) }, false))
+            add(Pair(withContext(Dispatchers.Default) { SauvegardeCrypto.deriver(phrase) }, true))
+        }
+        var cles: SauvegardeCrypto.Cles? = null; var ancienne = false; var infos: Existante? = null
+        for ((k, ancien) in candidates) { val e = existante(c, k); if (e != null) { cles = k; ancienne = ancien; infos = e; break } }
+        if (cles == null) throw Erreur(if (identifiant.isBlank()) "Aucune sauvegarde trouvée pour cette phrase secrète (sauvegardes d'avant la version 1.60). Si vous avez activé la sauvegarde avec un e-mail ou un téléphone, saisissez-le."
+            else "Aucune sauvegarde trouvée pour cet identifiant et cette phrase secrète. Vérifiez l'e-mail ou le numéro (avec l'indicatif) et la phrase.")
+        val cl = cles!!
         val chiffre = withContext(Dispatchers.IO) {
-            appel(cles, "GET", if (precedente) "?precedente=1" else "").use { r ->
+            appel(c, cl, "GET", if (precedente) "?precedente=1" else "").use { r ->
                 if (r.code == 404) throw Erreur("Aucune sauvegarde trouvée pour cette phrase secrète")
                 if (!r.isSuccessful) throw Erreur(messageServeur(r, "Téléchargement impossible"))
                 r.body!!.bytes()
             }
         }
-        val entrees = try { SauvegardeCrypto.ouvrir(SauvegardeCrypto.dechiffrer(cles.chiffre, chiffre)) } catch (e: IllegalArgumentException) { throw Erreur(e.message ?: "Phrase secrète inexacte") }
+        val entrees = try { SauvegardeCrypto.ouvrir(SauvegardeCrypto.dechiffrer(cl.chiffre, chiffre)) } catch (e: IllegalArgumentException) { throw Erreur(e.message ?: "Phrase secrète inexacte") }
         if (entrees["manifeste"]?.let { String(it).startsWith("personnel-maison;") } != true || entrees["base/${Base.NOM_FICHIER}"] == null || entrees["secrets/cle_base"] == null)
             throw Erreur("Cette sauvegarde n'est pas celle de Personnel de maison")
         val (sauv, tel) = withContext(Dispatchers.IO) {
             Pair(Base.compterCopie(c, entrees["base/${Base.NOM_FICHIER}"]!!, entrees["base/${Base.NOM_FICHIER}-wal"], String(entrees["secrets/cle_base"]!!)), Base.compterLive(c))
         }
-        Pair(Apercu(entrees, cles, sauv, entrees.keys.count { it.startsWith("pieces/") }, tel), Resultat(true, ""))
+        Pair(Apercu(entrees, cl, sauv, entrees.keys.count { it.startsWith("pieces/") }, tel, if (ancienne) "" else identifiant, infos?.appareil, ancienne), Resultat(true, ""))
     } catch (e: Erreur) { Pair(null, Resultat(false, e.message ?: "Restauration impossible")) } catch (e: Exception) { Pair(null, Resultat(false, "Restauration impossible : ${e.message ?: e.javaClass.simpleName}")) }
 
     /** Fichier (chiffré par le téléphone) où est gardée la copie de secours d'AVANT la dernière restauration. */
@@ -211,10 +251,11 @@ object SauvegardeEnLigne {
             androidx.security.crypto.EncryptedFile.Builder(c, f, cleSecours(c), androidx.security.crypto.EncryptedFile.FileEncryptionScheme.AES256_GCM_HKDF_4KB).build()
                 .openFileOutput().use { it.write(SauvegardeCrypto.archiver(actuel)) }
             appliquer(c, a.entrees)
-            retenir(c, a.cles)                                                          // la sauvegarde en ligne reste active avec la même phrase
+            retenir(c, a.cles, a.identifiant.ifBlank { null })                          // la sauvegarde en ligne reste active avec les mêmes clés
+            retenirConnu(c, a.appareil)                                                  // l'installation dont je viens de restaurer la sauvegarde n'est plus une « autre » installation
             reglages(c).edit().putLong("sauv_dernier", System.currentTimeMillis()).apply()
         }
-        Resultat(true, "Données restaurées : ${resumer(a.sauvegarde, a.pieces)}")
+        Resultat(true, "Données restaurées : ${resumer(a.sauvegarde, a.pieces)}" + if (a.ancienne) ". Cette sauvegarde date d'avant l'identifiant : pour la protéger d'une phrase identique chez quelqu'un d'autre, désactivez la sauvegarde puis réactivez-la avec votre e-mail ou téléphone." else "")
     } catch (e: Erreur) { Resultat(false, e.message ?: "Restauration impossible") } catch (e: Exception) { Resultat(false, "Restauration impossible : ${e.message ?: e.javaClass.simpleName}") }
 
     /** Retour en arrière : rétablit les données d'AVANT la dernière restauration (copie de secours). */

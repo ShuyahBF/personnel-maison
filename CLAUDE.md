@@ -99,3 +99,10 @@ Les règles permanentes du propriétaire (commits, version, commentaires, secret
 
 - Toucher l'écran pendant la mesure en direct (1.59, propriétaire 23/11/2026) : DEUX comportements au choix, tuile « Toucher : marqueur » / « Toucher : endroit » (préférence `mesure` / `toucher`) :
   « marqueur » (PAR DÉFAUT) = le toucher pose le point là où se trouve le MARQUEUR (viseur au centre de l'écran, comme « Poser un point ») ; « endroit » = le point est posé à l'endroit précis touché (comportement de la 1.53). Un toucher tout près d'un point existant ne pose rien (il sert à le glisser). À essayer sur téléphone (ARCore).
+
+## Sauvegarde en ligne : identifiant, garde-fou de phrase et avertissement « autre appareil » (1.60, propriétaire 23/11/2026)
+- Constat : sans identifiant, TOUTE personne qui a la même phrase partage le même casier (mêmes clés) : écrasement mutuel et lecture croisée. Remède : l'IDENTIFIANT (e-mail ou téléphone, normalisé : `SauvegardeCrypto.normaliserIdentifiant`) est mélangé au sel de la dérivation (`deriver(phrase, identifiant)`, sel « …/v2/<identifiant> ») : casier et clés différents par personne. Il ne quitte jamais le téléphone ; il faut le retaper avec la phrase sur un téléphone neuf.
+- Anciennes sauvegardes (phrase seule, avant la 1.60) : la restauration tente d'abord « identifiant + phrase », puis l'ancien casier (identifiant vide) ; le message invite à réactiver avec un identifiant.
+- Garde-fou (`GardeFouPhrase`, testé) : 12 caractères au moins, pas de chiffres seuls, de suites (clavier, alphabet), de répétitions, de mots trop courants, ni l'e-mail / téléphone ; chaque refus est écrit à l'écran.
+- « Autre appareil » : chaque installation a un identifiant ALÉATOIRE (`sauv_appareil`, jamais copié dans la valise) envoyé dans l'en-tête `X-Appareil` ; ShuyahStore (lot 48) le garde par version et `/info` le rend. Si le casier a été mis à jour en dernier par une autre installation que la mienne ou celle que j'ai restaurée,
+  ni l'activation, ni « Sauvegarder maintenant », ni la sauvegarde automatique n'écrasent en silence : fenêtre « Restaurer / Remplacer / Annuler ». À essayer sur téléphone.
