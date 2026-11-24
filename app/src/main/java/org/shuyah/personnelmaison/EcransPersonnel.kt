@@ -270,10 +270,12 @@ fun EcranFormPersonnel(id: Long?, retour: () -> Unit) {
                     val p = Personnel(id = existant?.id ?: 0, nom = nom.trim(), prenoms = prenoms.trim(), fonction = fonction, societeId = societeId, dateDebut = debut, dateFin = fin,
                         debutMin = premier.debutMin, finMin = premier.finMin, jours = masque, salaireNet = salaire.toLongOrNull() ?: 0, telephone = "", pieceChemin = pieceNom, pieceTexte = pieceTexte,
                         creeLe = existant?.creeLe ?: System.currentTimeMillis(), jourPaie = (jourPaie.toIntOrNull() ?: 0).coerceIn(0, 28))
+                    Base.atomique(c) {                                  // 1.77 : fiche, horaires et numéros ensemble ou pas du tout
                     val pid = if (existant == null) dao.ajouterPersonnel(p) else { dao.modifierPersonnel(p); p.id }
                     dao.supprimerHoraires(pid)
                     horaires.toSortedMap().forEach { (j, cr) -> dao.ajouterHoraire(HorairePersonnel(personnelId = pid, jour = j, debutMin = cr.debutMin, finMin = cr.finMin)) }
                     dao.enregistrerNumeros("PERSONNEL", pid, numeros.toList())
+                    }
                     if (ancienne != null && ancienne != pieceNom) Pieces.supprimer(c, ancienne)     // ancienne copie remplacée ou retirée
                     nouvellePiece = null; retour()
                 }

@@ -169,8 +169,10 @@ fun EcranFormSociete(id: Long?, retour: () -> Unit) {
             Tuile(Icons.Filled.Check, "Enregistrer", Vert, actif = nom.isNotBlank()) {
                 scope.lancerSecurise(c, "EcransSocietes") {
                     val s = Societe(id = existante?.id ?: 0, nom = nom.trim(), telephone = "", adresse = adresse.trim(), orange = orange.trim(), moov = moov.trim(), telecel = telecel.trim(), remarques = remarques.trim())
-                    val sid = if (existante == null) dao.ajouterSociete(s) else { dao.modifierSociete(s); s.id }
-                    dao.enregistrerNumeros("SOCIETE", sid, numeros.toList())
+                    Base.atomique(c) {                                  // 1.77 : fiche et numéros ensemble ou pas du tout
+                        val sid = if (existante == null) dao.ajouterSociete(s) else { dao.modifierSociete(s); s.id }
+                        dao.enregistrerNumeros("SOCIETE", sid, numeros.toList())
+                    }
                     retour()
                 }
             }

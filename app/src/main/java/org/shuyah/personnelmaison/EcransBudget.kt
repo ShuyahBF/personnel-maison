@@ -290,22 +290,20 @@ fun EcranFormOperation(id: Long?, genreInitial: String, scanDirect: Boolean, ret
         RangeeTuiles {
             Tuile(Icons.Filled.Check, "Enregistrer", Vert, actif = !occupe && (montantFinal > 0 || somme > 0)) {
                 scope.lancerSecurise(c, "EcransBudget") {
-                  try {                                       // 1.73 : une erreur d'enregistrement est notée et affichée, jamais un plantage
                     val total = if (montantFinal > 0) montantFinal else somme
                     val maintenant = System.currentTimeMillis()
                     val op = Operation(id = existante?.id ?: 0, genre = genre, date = date, montant = total, tiers = tiers.trim(), categorie = categorie.trim(), portefeuille = portefeuille.trim().ifBlank { "Espèces" },
                         note = note.trim(), creeLe = existante?.creeLe ?: maintenant, modifieLe = maintenant)
-                    val oid = if (existante == null) dao.ajouterOperation(op) else { dao.modifierOperation(op); op.id }
-                    dao.supprimerLignesOperation(oid)
-                    lignes.filter { it.libelle.isNotBlank() || (it.montant.toLongOrNull() ?: 0) > 0 }.forEach { dao.ajouterLigneOperation(LigneOperation(operationId = oid, libelle = it.libelle.trim(), quantite = it.quantite.toDoubleOrNull() ?: 1.0, montant = it.montant.toLongOrNull() ?: 0, coche = it.coche)) }
-                    pieces.forEach { p -> if (p.id == null) dao.ajouterPieceOperation(PieceOperation(operationId = oid, fichier = p.fichier, texte = p.texte)) else dao.modifierPieceOperation(PieceOperation(p.id, oid, p.fichier, p.texte)) }
-                    retirees.forEach { dao.supprimerPieceOperation(it.id ?: return@forEach); Pieces.supprimer(c, it.fichier) }
+                    // 1.77 : opération, lignes et pièces s'enregistrent TOUT ENSEMBLE ou pas du tout (une erreur réparée automatiquement peut alors être rejouée sans doublon)
+                    Base.atomique(c) {
+                        val oid = if (existante == null) dao.ajouterOperation(op) else { dao.modifierOperation(op); op.id }
+                        dao.supprimerLignesOperation(oid)
+                        lignes.filter { it.libelle.isNotBlank() || (it.montant.toLongOrNull() ?: 0) > 0 }.forEach { dao.ajouterLigneOperation(LigneOperation(operationId = oid, libelle = it.libelle.trim(), quantite = it.quantite.toDoubleOrNull() ?: 1.0, montant = it.montant.toLongOrNull() ?: 0, coche = it.coche)) }
+                        pieces.forEach { p -> if (p.id == null) dao.ajouterPieceOperation(PieceOperation(operationId = oid, fichier = p.fichier, texte = p.texte)) else dao.modifierPieceOperation(PieceOperation(p.id, oid, p.fichier, p.texte)) }
+                        retirees.forEach { dao.supprimerPieceOperation(it.id ?: return@forEach) }
+                    }
+                    retirees.forEach { Pieces.supprimer(c, it.fichier) }          // les fichiers ne sont effacés qu'une fois la base à jour
                     retour()
-                  } catch (e: Throwable) {
-                    Plantage.noter(c, "erreur d'enregistrement", "EcranOperation", e)
-                    message = "Enregistrement impossible : ${e.javaClass.simpleName} ${e.message ?: ""}. Le détail est gardé (Aide)."
-                    android.widget.Toast.makeText(c.applicationContext, "Enregistrement impossible : ${e.message ?: e.javaClass.simpleName}", android.widget.Toast.LENGTH_LONG).show()    // visible tout de suite (1.75)
-                  }
                 }
             }
             Tuile(Icons.Filled.Close, "Annuler") { annuler() }
