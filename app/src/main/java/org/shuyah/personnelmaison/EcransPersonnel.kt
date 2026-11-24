@@ -109,7 +109,7 @@ fun EcranFichePersonnel(id: Long, ouvrir: (Ecran) -> Unit, retour: () -> Unit) {
         Carte("Notes et remarques", Icons.Filled.StickyNote2) {
             Champ("Nouvelle note", nouvelleNote, { nouvelleNote = it }, lignes = 2)
             Tuile(Icons.Filled.Add, "Ajouter", Orange, actif = nouvelleNote.isNotBlank()) {
-                scope.launch { dao.ajouterNote(NotePerso(personnelId = id, texte = nouvelleNote.trim())); nouvelleNote = "" }
+                scope.lancerSecurise(c, "EcransPersonnel") { dao.ajouterNote(NotePerso(personnelId = id, texte = nouvelleNote.trim())); nouvelleNote = "" }
             }
             if (notes.isEmpty()) Text("Aucune note.", color = Gris, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
             notes.forEach { n ->
@@ -118,19 +118,19 @@ fun EcranFichePersonnel(id: Long, ouvrir: (Ecran) -> Unit, retour: () -> Unit) {
                         Text(horodatage(n.horodatage), fontSize = 11.sp, color = Gris)
                         Text(n.texte, fontSize = 14.sp, color = BleuNuit)
                     }
-                    Icon(Icons.Filled.Delete, "Supprimer la note", tint = Rouge, modifier = Modifier.size(24.dp).clickable { scope.launch { dao.supprimerNote(n.id) } })
+                    Icon(Icons.Filled.Delete, "Supprimer la note", tint = Rouge, modifier = Modifier.size(24.dp).clickable { scope.lancerSecurise(c, "EcransPersonnel") { dao.supprimerNote(n.id) } })
                 }
             }
         }
         RangeeTuiles {
             Tuile(Icons.Filled.Edit, "Modifier") { ouvrir(Ecran.FormPersonnel(id)) }
             if (personnel.dateFin == null || personnel.dateFin > LocalDate.now().toString())
-                Tuile(Icons.Filled.EventBusy, "Fin de contrat", Rouge) { scope.launch { dao.modifierPersonnel(personnel.copy(dateFin = LocalDate.now().toString())) } }
+                Tuile(Icons.Filled.EventBusy, "Fin de contrat", Rouge) { scope.lancerSecurise(c, "EcransPersonnel") { dao.modifierPersonnel(personnel.copy(dateFin = LocalDate.now().toString())) } }
             Tuile(Icons.Filled.Delete, "Supprimer", Rouge) { suppression = true }
         }
     }
     if (suppression) Confirmation("Supprimer cette fiche ?", "La fiche, ses pointages, ses notes et la copie de la pièce d'identité seront effacés définitivement.", {
-        scope.launch {
+        scope.lancerSecurise(c, "EcransPersonnel") {
             Pieces.supprimer(c, personnel.pieceChemin)
             dao.supprimerPointagesDe(id); dao.supprimerJournalDe(id); dao.supprimerNotesDe(id)
             dao.supprimerHoraires(id); dao.supprimerNumeros("PERSONNEL", id); dao.supprimerPaiementsDe(id); dao.supprimerVersementsDe(id); dao.supprimerTachesDe(id); dao.supprimerPersonnel(id)
@@ -203,7 +203,7 @@ fun EcranFormPersonnel(id: Long?, retour: () -> Unit) {
 
     // Photo ou image de la galerie → réduction, copie chiffrée, OCR, suggestion des noms
     val traiter: (android.net.Uri) -> Unit = { uri ->
-        scope.launch {
+        scope.lancerSecurise(c, "EcransPersonnel") {
             occupe = true; message = null
             val image = Pieces.charger(c, uri)
             if (image == null) message = "Image illisible"
@@ -262,7 +262,7 @@ fun EcranFormPersonnel(id: Long?, retour: () -> Unit) {
         }
         RangeeTuiles {
             Tuile(Icons.Filled.Check, "Enregistrer", Vert, actif = valide && !occupe) {
-                scope.launch {
+                scope.lancerSecurise(c, "EcransPersonnel") {
                     val ancienne = existant?.pieceChemin
                     // Anciennes colonnes (horaire unique, jours) : recopiées du premier jour travaillé, pour compatibilité ; la vérité est dans les horaires par jour
                     val premier = horaires.toSortedMap().values.firstOrNull() ?: Creneau(7 * 60, 17 * 60)

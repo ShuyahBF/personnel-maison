@@ -186,7 +186,7 @@ fun BlocPaiements(personnel: Personnel) {
                     if (p.motif.isNotBlank()) Text(p.motif, fontSize = 14.sp, color = BleuNuit)
                 }
                 Text((if (p.genre == "BONUS") "+ " else if (p.genre == "AVANCE") "↗ " else "− ") + Calculs.francs(p.montant), fontSize = 15.sp, color = if (p.genre == "BONUS") Vert else if (p.genre == "AVANCE") Orange else Rouge, textAlign = TextAlign.End)
-                Icon(Icons.Filled.Delete, "Supprimer", tint = Rouge, modifier = Modifier.padding(start = 10.dp).size(24.dp).clickable { scope.launch { dao.supprimerPaiement(p.id) } })
+                Icon(Icons.Filled.Delete, "Supprimer", tint = Rouge, modifier = Modifier.padding(start = 10.dp).size(24.dp).clickable { scope.lancerSecurise(c, "EcransExtra") { dao.supprimerPaiement(p.id) } })
             }
         }
         Spacer(Modifier.height(8.dp))
@@ -210,7 +210,7 @@ fun BlocPaiements(personnel: Personnel) {
                 }
             },
             confirmButton = { Tuile(Icons.Filled.Check, "Valider", Vert, actif = (montant.toLongOrNull() ?: 0) > 0) {
-                scope.launch {
+                scope.lancerSecurise(c, "EcransExtra") {
                     dao.ajouterPaiement(Paiement(personnelId = personnel.id, date = date, genre = genre, montant = montant.toLong(), motif = motif.trim(), etalement = if (genre == "AVANCE") etalement.takeWhile { it.isDigit() }.toIntOrNull() ?: 1 else 1))
                     android.widget.Toast.makeText(c, "Enregistré : ${Calculs.francs(montant.toLong())}", android.widget.Toast.LENGTH_SHORT).show()
                 }; ajout = null
@@ -250,7 +250,7 @@ fun BlocTaches(personnel: Personnel) {
                 Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Filled.CheckCircleOutline, null, tint = Bleu, modifier = Modifier.size(20.dp))
                     Text(t.libelle, fontSize = 15.sp, color = BleuNuit, modifier = Modifier.weight(1f).padding(start = 8.dp))
-                    Icon(Icons.Filled.Delete, "Supprimer la tâche", tint = Rouge, modifier = Modifier.size(24.dp).clickable { scope.launch { dao.supprimerTache(t.id) } })
+                    Icon(Icons.Filled.Delete, "Supprimer la tâche", tint = Rouge, modifier = Modifier.size(24.dp).clickable { scope.lancerSecurise(c, "EcransExtra") { dao.supprimerTache(t.id) } })
                 }
             }
         }
@@ -258,14 +258,14 @@ fun BlocTaches(personnel: Personnel) {
         RangeeTuiles {
             Tuile(Icons.Filled.Add, "Ajouter", Orange) { ajout = true }
             if (suggestions.any { s -> taches.none { it.libelle == s } })
-                Tuile(Icons.Filled.PlaylistAdd, "Tâches usuelles", Bleu) { scope.launch { suggestions.filter { s -> taches.none { it.libelle == s } }.forEach { dao.ajouterTache(Tache(personnelId = personnel.id, libelle = it)) } } }
+                Tuile(Icons.Filled.PlaylistAdd, "Tâches usuelles", Bleu) { scope.lancerSecurise(c, "EcransExtra") { suggestions.filter { s -> taches.none { it.libelle == s } }.forEach { dao.ajouterTache(Tache(personnelId = personnel.id, libelle = it)) } } }
         }
     }
     if (ajout) {
         var choix by remember { mutableStateOf("") }
         AlertDialog(onDismissRequest = { ajout = false }, title = { Text("Nouvelle tâche") },
             text = { Liste("Tâche", choix, suggestions, valeurLibre = true) { choix = it } },
-            confirmButton = { Tuile(Icons.Filled.Check, "Valider", Vert, actif = choix.isNotBlank()) { scope.launch { dao.ajouterTache(Tache(personnelId = personnel.id, libelle = choix.trim())) }; ajout = false } },
+            confirmButton = { Tuile(Icons.Filled.Check, "Valider", Vert, actif = choix.isNotBlank()) { scope.lancerSecurise(c, "EcransExtra") { dao.ajouterTache(Tache(personnelId = personnel.id, libelle = choix.trim())) }; ajout = false } },
             dismissButton = { Tuile(Icons.Filled.Close, "Annuler") { ajout = false } })
     }
 }
@@ -315,7 +315,7 @@ fun BlocDocuments(societeId: Long, ouvrir: (Ecran) -> Unit) {
             text = { Liste("Type de document", libelle, TYPES_DOCUMENT, valeurLibre = true) { libelle = it } },
             confirmButton = { Tuile(Icons.Filled.Check, "Enregistrer", Vert) {
                 enAttente = null
-                scope.launch {
+                scope.lancerSecurise(c, "EcransExtra") {
                     occupe = true; message = null
                     val pdf = c.contentResolver.getType(uri) == "application/pdf"
                     try {
@@ -356,6 +356,6 @@ fun EcranDocument(id: Long, retour: () -> Unit) {
         if (doc != null) Tuile(Icons.Filled.Delete, "Supprimer", Rouge) { suppression = true }
     }
     if (suppression) Confirmation("Supprimer ce document ?", "La copie chiffrée sera effacée définitivement.", {
-        scope.launch { doc?.let { Pieces.supprimer(c, it.fichier); dao.supprimerDocument(it.id) } }; suppression = false; retour()
+        scope.lancerSecurise(c, "EcransExtra") { doc?.let { Pieces.supprimer(c, it.fichier); dao.supprimerDocument(it.id) } }; suppression = false; retour()
     }, { suppression = false })
 }

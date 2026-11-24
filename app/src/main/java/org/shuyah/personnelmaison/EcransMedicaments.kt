@@ -54,7 +54,7 @@ fun EcranMedicaments(ouvrir: (Ecran) -> Unit, retour: () -> Unit) = Page("Médic
                     Text(RappelsMedicaments.libelleHeure(((l.prevuMs - debutJour) / 60_000L).toInt()) + " · " + l.med.nom, fontSize = 16.sp, color = BleuNuit)
                     if (l.med.dose.isNotBlank()) Text(l.med.dose, fontSize = 12.sp, color = Gris)
                 }
-                if (l.statut == "ATTENTE" || l.statut == "OUBLIE" || l.statut == "A_VENIR") Tuile(Icons.Filled.Check, "Pris", Vert) { scope.launch { PlanificateurMedicaments.confirmerPrise(c, l.med.id, l.prevuMs) } }
+                if (l.statut == "ATTENTE" || l.statut == "OUBLIE" || l.statut == "A_VENIR") Tuile(Icons.Filled.Check, "Pris", Vert) { scope.lancerSecurise(c, "EcransMedicaments") { PlanificateurMedicaments.confirmerPrise(c, l.med.id, l.prevuMs) } }
             }
         }
     }
@@ -147,7 +147,7 @@ fun EcranFormMedicament(id: Long?, retour: () -> Unit) = Page(if (id == null) "N
                     val a = FamilleNfc.activite(c)
                     if (a == null) resultat = "Écran indisponible, réessayez."
                     else { resultat = ""; ecriture = true
-                        EtiquetteNfc.demarrerEcriture(a, id) { ok, message -> scope.launch { resultat = message; if (ok) { ecriture = false; FamilleNfc.arreterLecteur(a) } } } }
+                        EtiquetteNfc.demarrerEcriture(a, id) { ok, message -> scope.lancerSecurise(c, "EcransMedicaments") { resultat = message; if (ok) { ecriture = false; FamilleNfc.arreterLecteur(a) } } } }
                 }
             }
             if (resultat.isNotBlank()) Text(resultat, fontSize = 13.sp, color = if (resultat.startsWith("Étiquette")) Vert else Rouge, modifier = Modifier.padding(top = 4.dp))
@@ -155,7 +155,7 @@ fun EcranFormMedicament(id: Long?, retour: () -> Unit) = Page(if (id == null) "N
     }
     val valide = nom.trim().length >= 2 && heures.isNotEmpty() && jours != 0
     GrosBouton(Icons.Filled.Save, "Enregistrer", Vert, actif = valide) {
-        scope.launch {
+        scope.lancerSecurise(c, "EcransMedicaments") {
             val m = Medicament(id = existant?.id ?: 0, nom = nom.trim(), dose = dose.trim(), heures = RappelsMedicaments.minutesVersTexte(heures), jours = jours, debut = debut, fin = fin, partage = partage, actif = actif, note = note.trim())
             val mid = if (existant == null) dao.ajouterMedicament(m) else { dao.modifierMedicament(m); m.id }
             PlanificateurMedicaments.planifier(c, m.copy(id = mid))
@@ -165,7 +165,7 @@ fun EcranFormMedicament(id: Long?, retour: () -> Unit) = Page(if (id == null) "N
     if (id != null) GrosBouton(Icons.Filled.Delete, "Supprimer ce médicament", Rouge) { suppression = true }
     if (suppression) Confirmation("Supprimer", "Le médicament et l'historique de ses prises seront supprimés. Continuer ?", {
         suppression = false
-        scope.launch { if (id != null) { PlanificateurMedicaments.annuler(c, id); dao.supprimerPrisesDe(id); dao.supprimerMedicament(id) }; retour() }
+        scope.lancerSecurise(c, "EcransMedicaments") { if (id != null) { PlanificateurMedicaments.annuler(c, id); dao.supprimerPrisesDe(id); dao.supprimerMedicament(id) }; retour() }
     }, { suppression = false })
 }
 

@@ -90,7 +90,7 @@ fun EcranFicheSociete(id: Long, ouvrir: (Ecran) -> Unit, retour: () -> Unit) {
                         }
                         if (e.remarque.isNotBlank()) Text(e.remarque, fontSize = 14.sp, color = BleuNuit)
                     }
-                    Icon(Icons.Filled.Delete, "Supprimer l'évaluation", tint = Rouge, modifier = Modifier.size(24.dp).clickable { scope.launch { dao.supprimerEvaluation(e.id) } })
+                    Icon(Icons.Filled.Delete, "Supprimer l'évaluation", tint = Rouge, modifier = Modifier.size(24.dp).clickable { scope.lancerSecurise(c, "EcransSocietes") { dao.supprimerEvaluation(e.id) } })
                 }
             }
         }
@@ -112,7 +112,7 @@ fun EcranFicheSociete(id: Long, ouvrir: (Ecran) -> Unit, retour: () -> Unit) {
         confirmButton = { Tuile(Icons.Filled.Edit, "Corriger", Orange) { val e = controle.first().first; controle = emptyList(); ouvrir(Ecran.FormEvaluation(id, e.id)) } },
         dismissButton = { Row { Tuile(Icons.Filled.Share, "Partager", Bleu) { controle = emptyList(); partager(c, "Témoignage sur ${s.nom}", Calculs.temoignage(s.nom, evaluations)) }; Tuile(Icons.Filled.Close, "Annuler") { controle = emptyList() } } })
     if (suppression) Confirmation("Supprimer cette société ?", "Ses évaluations seront effacées. Les personnels rattachés restent, sans société.", {
-        scope.launch {
+        scope.lancerSecurise(c, "EcransSocietes") {
             dao.documentsDeListe(id).forEach { Pieces.supprimer(c, it.fichier) }
             dao.supprimerDocumentsDe(id); dao.supprimerNumeros("SOCIETE", id)
             dao.detacherPersonnel(id); dao.supprimerEvaluationsDe(id); dao.supprimerSociete(id)
@@ -167,7 +167,7 @@ fun EcranFormSociete(id: Long?, retour: () -> Unit) {
         }
         RangeeTuiles {
             Tuile(Icons.Filled.Check, "Enregistrer", Vert, actif = nom.isNotBlank()) {
-                scope.launch {
+                scope.lancerSecurise(c, "EcransSocietes") {
                     val s = Societe(id = existante?.id ?: 0, nom = nom.trim(), telephone = "", adresse = adresse.trim(), orange = orange.trim(), moov = moov.trim(), telecel = telecel.trim(), remarques = remarques.trim())
                     val sid = if (existante == null) dao.ajouterSociete(s) else { dao.modifierSociete(s); s.id }
                     dao.enregistrerNumeros("SOCIETE", sid, numeros.toList())
@@ -202,7 +202,7 @@ fun EcranFormEvaluation(societeId: Long, id: Long?, retour: () -> Unit) {
     }
     // Enregistrement de l'évaluation (création ou modification)
     fun enregistrer() {
-        scope.launch {
+        scope.lancerSecurise(c, "EcransSocietes") {
             val t = if (type == "Mois") "MOIS" else "JOUR"
             val e = Evaluation(id = existante?.id ?: 0, societeId = societeId, type = t, periode = if (t == "MOIS") YearMonth.from(date).toString() else date.toString(),
                 note = note, remarque = remarque.trim(), partageable = partageable, creeLe = existante?.creeLe ?: System.currentTimeMillis())
