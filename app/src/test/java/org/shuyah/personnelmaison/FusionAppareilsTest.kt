@@ -99,3 +99,29 @@ class FusionAppareilsDiagnosticTest {
         assertTrue(!plan.vide); assertTrue(plan.resume().contains("rapprochée"))
     }
 }
+
+/** 1.69 : un pointage ENREGISTRÉ DE NOUVEAU (REPLACE) change d'identité et laisse l'ancienne en pierre tombale : ce n'est pas une suppression. */
+class FusionAppareilsRemplacementTest {
+    private fun pt(uid: String, depart: Int, maj: Long) = FusionAppareils.Fiche("pointages", uid, maj, mapOf("personnelId" to "p1", "date" to "2026-11-24", "arrivee" to 385L, "depart" to depart.toLong()))
+    @Test fun uneFicheRemplaceeNEstPasSupprimee() {
+        val b = FusionAppareilsTest.Appareil(listOf(FusionAppareils.Fiche("personnels", "p1", 1, mapOf("nom" to "X", "societeId" to null, "pieceChemin" to null)), pt("aaa", 1000, 5)))
+        val a = FusionAppareilsTest.Appareil(listOf(FusionAppareils.Fiche("personnels", "p1", 1, mapOf("nom" to "X", "societeId" to null, "pieceChemin" to null)), pt("bbb", 1010, 20)),
+            listOf(FusionAppareils.Tombe("pointages", "aaa", 20)))                          // l'ancienne identité « aaa » est en pierre tombale sur A
+        val plan = b.fusionnerAvec(a)
+        assertEquals(0, plan.suppressions)                                                  // plus de fausse suppression
+        val pts = b.fiches.values.filter { it.table == "pointages" }
+        assertEquals(1, pts.size); assertEquals(1010L, pts[0].champs["depart"])             // le pointage existe toujours, avec la valeur de A
+        a.fusionnerAvec(b); assertEquals(a.contenu(), b.contenu())
+    }
+    @Test fun uneVraieSuppressionSePropageToujours() {
+        val b = FusionAppareilsTest.Appareil(listOf(pt("aaa", 1000, 5)))
+        val a = FusionAppareilsTest.Appareil(emptyList(), listOf(FusionAppareils.Tombe("pointages", "aaa", 20)))
+        assertEquals(1, b.fusionnerAvec(a).suppressions); assertTrue(b.fiches.isEmpty())
+    }
+    @Test fun lApercuDecritChaqueChangement() {
+        val b = FusionAppareilsTest.Appareil(listOf(pt("aaa", 1000, 5)))
+        val a = FusionAppareilsTest.Appareil(listOf(pt("aaa", 1010, 20).let { it.copy(champs = it.champs + ("arrivee" to 385L)) }))
+        val plan = FusionAppareils.calculer(b.instantane(), a.instantane())
+        assertTrue(plan.details.any { it.contains("pointages · 2026-11-24") && it.contains("depart 16:40 → 16:50") })
+    }
+}

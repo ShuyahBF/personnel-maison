@@ -27,7 +27,7 @@ object FusionAppareils {
         data class AdopterUid(val table: String, val ancien: String, val nouveau: String) : Operation()   // deux fiches identiques : on garde le plus petit identifiant des deux
     }
     /** Résultat : opérations à appliquer ici, et compteurs lisibles pour l'aperçu montré avant de confirmer. */
-    class Plan(val operations: List<Operation>) {
+    class Plan(val operations: List<Operation>, val details: List<String> = emptyList()) {
         val ajouts get() = operations.count { it is Operation.Inserer }
         val modifications get() = operations.count { it is Operation.Mettre }
         val suppressions get() = operations.count { it is Operation.Supprimer }
@@ -86,36 +86,58 @@ object FusionAppareils {
         val localParCle = local.fiches.mapNotNull { f -> cleNaturelle(f)?.let { (f.table to it) to f } }.toMap()
         val tombesLocales = local.tombes.associate { (it.table to it.uid) to it.maj }
         val ops = mutableListOf<Operation>()
+        val details = mutableListOf<String>()                                               // lignes lisibles montrées dans l'aperçu : « pointage 2026-11-24 : arrivee 06:30 → 06:25 »
+        val clesNaturellesPair = pair.fiches.mapNotNull { f -> cleNaturelle(f)?.let { f.table to it } }.toSet()
         val deja = HashSet<Pair<String, String>>()                                          // uids déjà traités dans ce plan (deux fiches de l'autre appareil ne se télescopent pas)
 
         for (table in ORDRE) for (f in pair.fiches.filter { it.table == table }) {
             val cle = f.table to f.uid
-            val tombe = tombesLocales[cle]
             val ici = localParUid[cle]
-            when {
-                tombe != null && ici == null -> if (f.maj > tombe) ops.add(Operation.Inserer(f))   // supprimée ici, mais modifiée ailleurs APRÈS : elle revient ; sinon elle reste supprimée
-                ici != null -> if (plusRecent(f, ici)) ops.add(Operation.Mettre(f))
-                else -> {
-                    val nat = cleNaturelle(f)?.let { localParCle[f.table to it] }
-                    if (nat == null) ops.add(Operation.Inserer(f))
-                    else if (cle !in deja) {                                                   // même fiche logique créée des deux côtés : on les ramène à UNE, le plus petit identifiant est gardé
-                        val garde = minOf(nat.uid, f.uid)
-                        if (garde != nat.uid) ops.add(Operation.AdopterUid(f.table, nat.uid, garde))
-                        if (plusRecent(f, nat)) ops.add(Operation.Mettre(f.copy(uid = garde)))
-                        deja.add(f.table to nat.uid)
-                    }
-                }
+            if (ici != null) {                                                                 // même fiche des deux côtés : la plus récente l'emporte
+                if (plusRecent(f, ici)) { ops.add(Operation.Mettre(f)); details.add("modification : " + decrire(f) + " (" + differences(ici, f) + ")") }
+                continue
             }
+            // Même fiche LOGIQUE créée ou remplacée des deux côtés (pointage de la même personne le même jour…) : la clé naturelle passe AVANT la pierre tombale
+            // (l'ancienne identité d'une fiche remplacée est en pierre tombale alors que la fiche existe toujours) ; on les ramène à UNE, le plus petit identifiant est gardé.
+            val nat = cleNaturelle(f)?.let { localParCle[f.table to it] }
+            if (nat != null) {
+                if (cle !in deja) {
+                    val garde = minOf(nat.uid, f.uid)
+                    if (garde != nat.uid) ops.add(Operation.AdopterUid(f.table, nat.uid, garde))
+                    if (plusRecent(f, nat)) { ops.add(Operation.Mettre(f.copy(uid = garde))); details.add("modification : " + decrire(f) + " (" + differences(nat, f) + ")") }
+                    deja.add(f.table to nat.uid)
+                }
+                continue
+            }
+            val tombe = tombesLocales[cle]                                                     // supprimée ici : elle ne revient que si elle a été modifiée ailleurs APRÈS la suppression
+            if (tombe == null || f.maj > tombe) { ops.add(Operation.Inserer(f)); details.add("ajout : " + decrire(f)) }
         }
         // Suppressions faites sur l'autre appareil : on les applique ici sauf si la fiche d'ici est plus récente que la suppression
         for (t in pair.tombes) {
             val ici = localParUid[t.table to t.uid] ?: continue
-            if (ici.maj <= t.maj) ops.add(Operation.Supprimer(t.table, t.uid))
+            // Une fiche « remplacée » (pointage enregistré de nouveau) laisse l'ANCIENNE identité en pierre tombale alors que la fiche existe toujours, sous une nouvelle identité, sur l'autre appareil :
+            // ce n'est PAS une vraie suppression (clé naturelle encore présente de l'autre côté) : on ne supprime rien.
+            val nat = cleNaturelle(ici)
+            if (nat != null && (t.table to nat) in clesNaturellesPair) continue
+            if (ici.maj <= t.maj) { ops.add(Operation.Supprimer(t.table, t.uid)); details.add("suppression : " + decrire(ici)) }
         }
         // Ordre d'application : adoptions d'identifiants, ajouts et modifications parents d'abord (déjà dans l'ordre), puis suppressions ENFANTS d'abord
         val (suppr, autres) = ops.partition { it is Operation.Supprimer }
         val rang = ORDRE.withIndex().associate { it.value to it.index }
-        return Plan(autres.sortedBy { if (it is Operation.AdopterUid) -1 else 0 } + suppr.sortedByDescending { rang[(it as Operation.Supprimer).table] ?: 0 })
+        return Plan(autres.sortedBy { if (it is Operation.AdopterUid) -1 else 0 } + suppr.sortedByDescending { rang[(it as Operation.Supprimer).table] ?: 0 }, details)
+    }
+
+    /** Description courte et lisible d'une fiche pour l'aperçu (date d'un pointage, nom d'une personne…). */
+    private fun decrire(f: Fiche): String {
+        val repere = f.champs["date"] ?: f.champs["nom"] ?: f.champs["mois"] ?: f.champs["libelle"] ?: f.champs["tiers"] ?: ""
+        return "${f.table}${if (repere != "") " · $repere" else ""}"
+    }
+    /** Champs qui diffèrent entre la fiche d'ici et celle de l'autre appareil (3 au plus ; les heures en minutes sont écrites HH:MM). */
+    private fun differences(ici: Fiche, autre: Fiche): String {
+        fun joli(k: String, v: Any?) = if (v is Long && k in setOf("arrivee", "depart", "debutMin", "finMin")) "%02d:%02d".format(v / 60, v % 60) else if (v == null) "vide" else v.toString().take(30)
+        val protegees = PROTEGEES[autre.table] ?: emptySet()
+        val d = autre.champs.keys.filter { it !in protegees && ici.champs[it] != autre.champs[it] }.take(3).map { "$it ${joli(it, ici.champs[it])} → ${joli(it, autre.champs[it])}" }
+        return if (d.isEmpty()) "contenu différent" else d.joinToString(", ")
     }
 
     /** La fiche de l'autre appareil est-elle STRICTEMENT plus récente, ou de même date mais de contenu différent avec le plus petit identifiant (départage stable) ? */
