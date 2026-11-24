@@ -250,6 +250,9 @@ fun EcranSauvegarde(retour: () -> Unit) = Page("Sauvegarde en ligne", retour) {
                 "Fiches : ${f.nbIci} ici, ${f.nbEnLigne} en ligne.", fontSize = 13.sp, color = Gris)
             if (f.faiteParCetAppareil(c)) Text("⚠ Cette sauvegarde est la VÔTRE : l'autre appareil n'utilise pas ce casier (e-mail ou phrase différents). Utilisez « Se relier au casier de l'autre appareil ».", fontSize = 15.sp, color = Rouge)
             Text(f.plan.resume(), fontSize = 16.sp, color = if (f.plan.vide) Vert else BleuNuit)
+            // 1.69 : le DÉTAIL de chaque changement (quel pointage, quelle heure) pour vérifier avant de confirmer
+            f.plan.details.take(8).forEach { Text("• $it", fontSize = 13.sp, color = BleuNuit) }
+            if (f.plan.details.size > 8) Text("… et ${f.plan.details.size - 8} autre(s)", fontSize = 13.sp, color = Gris)
             if (!f.plan.vide) Text("Pour chaque fiche, la version la plus récente l'emporte ; une fiche supprimée d'un côté est supprimée de l'autre sauf si elle a été modifiée après. Vos données actuelles sont mises de côté (rétablissables) avant la fusion, puis le résultat est publié en ligne pour l'autre appareil. Les pièces jointes (photos de pièces) ne sont pas fusionnées.", fontSize = 14.sp, color = Gris)
         } },
         confirmButton = { Tuile(Icons.Filled.Sync, if (f.plan.vide) "Publier" else "Fusionner", Vert, actif = !occupe) { fusion = null
