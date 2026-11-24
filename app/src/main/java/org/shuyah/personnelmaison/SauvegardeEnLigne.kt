@@ -249,6 +249,18 @@ object SauvegardeEnLigne {
         } catch (e: Exception) { /* hors connexion : on reverra à la prochaine ouverture */ }
     }
 
+    /**
+     * « Actualiser » du bandeau noir de chaque écran (1.67) : regarde si un AUTRE appareil a sauvegardé depuis, et le DIT (message affiché en toast). Ne modifie rien.
+     * Quand la synchronisation automatique sera livrée (lot 3), ce même bouton lancera aussi la fusion.
+     */
+    suspend fun actualiser(c: Context): String {
+        if (!actif(c)) return "Écran actualisé. (Sauvegarde en ligne non activée : rien à comparer avec un autre appareil.)"
+        verifierAutreAppareil(c)
+        val a = alerteAutreAppareil(c)
+        return if (a != null) "⚠ Un autre appareil a sauvegardé le ${a.take(16).replace('T', ' ')}. Ouvrez Sauvegarde en ligne → « Fusionner avec l'autre appareil »."
+        else "Écran actualisé : aucun autre appareil n'a sauvegardé depuis votre dernière sauvegarde."
+    }
+
     /** Sauvegarde automatique : une fois par jour à l'ouverture, en mode « cloud ». Rend null si rien n'était à faire. */
     suspend fun sauvegardeAutomatique(c: Context): Resultat? =
         if (actif(c) && System.currentTimeMillis() - dernierEnvoi(c) > INTERVALLE_AUTO_MS) sauvegarder(c) else null
@@ -394,6 +406,55 @@ object SauvegardeEnLigne {
             }
         }
     } catch (e: Erreur) { Resultat(false, e.message ?: "Changement impossible") } catch (e: Exception) { Resultat(false, "Changement impossible : ${e.message ?: e.javaClass.simpleName}") }
+
+    // ---------------------------------------------------------------- FUSION AVEC L'AUTRE APPAREIL (1.67, lot 2 de la refonte : « le plus récent gagne », fiche par fiche)
+    /** Ce que la fusion ferait, montré AVANT de confirmer. */
+    class ApercuFusion(val plan: FusionAppareils.Plan, val cles: SauvegardeCrypto.Cles, val appareil: String?, val majLe: String)
+
+    /**
+     * Télécharge la sauvegarde en ligne (clés mémorisées), ouvre sa base À PART, la compare fiche par fiche avec la nôtre et calcule le plan, SANS rien modifier.
+     * Refuse proprement si la sauvegarde date d'avant le suivi des modifications (1.64) : elle n'a pas d'identifiants uniques.
+     */
+    suspend fun apercuFusion(c: Context): Pair<ApercuFusion?, Resultat> = try {
+        val s = Base.secrets(c)
+        val id = s.getString("sauv_id", null); val jeton = s.getString("sauv_jeton", null); val chiffre = s.getString("sauv_chiffre", null)
+        if (id == null || jeton == null || chiffre == null) throw Erreur("La sauvegarde en ligne n'est pas activée")
+        val cles = SauvegardeCrypto.Cles(id, jeton, deHex(chiffre))
+        val infos = existante(c, cles) ?: throw Erreur("Aucune sauvegarde en ligne à fusionner")
+        val octets = withContext(Dispatchers.IO) { appel(c, cles, "GET").use { r -> if (!r.isSuccessful) throw Erreur(messageServeur(r, "Téléchargement impossible")); r.body!!.bytes() } }
+        val (ap, res) = analyser(c, octets, cles, identifiant(c) ?: "", infos.appareil, ancienne = false, fichier = false, majLe = infos.majLe)
+        if (ap == null) throw Erreur(res.message)
+        val plan = withContext(Dispatchers.IO) {
+            val pair = Base.avecCopie(c, ap.entrees["base/${Base.NOM_FICHIER}"]!!, ap.entrees["base/${Base.NOM_FICHIER}-wal"], String(ap.entrees["secrets/cle_base"]!!)) { db ->
+                val r = DepotFusion.Requeteur { sql, args -> DepotFusion.depuisCurseur(db.rawQuery(sql, args)) }
+                if (!DepotFusion.aLeSuivi(r)) throw Erreur("Cette sauvegarde date d'avant la version 1.64 (pas de suivi des modifications). Faites d'abord « Sauvegarder maintenant » depuis l'appareil qui a vos données, avec la 1.64 ou plus.")
+                DepotFusion.lire(r)
+            }
+            val local = Base.avecBase(c) { DepotFusion.lire(DepotFusion.requeteurRoom(it)) }
+            FusionAppareils.calculer(local, pair)
+        }
+        Pair(ApercuFusion(plan, cles, infos.appareil, infos.majLe), Resultat(true, plan.resume()))
+    } catch (e: Erreur) { Pair(null, Resultat(false, e.message ?: "Comparaison impossible")) } catch (e: Exception) { Pair(null, Resultat(false, "Comparaison impossible : ${e.message ?: e.javaClass.simpleName}")) }
+
+    /**
+     * Applique la fusion : D'ABORD une copie de secours chiffrée de nos données (rétablissable), puis le plan dans une transaction, puis on PUBLIE le résultat fusionné en ligne
+     * pour que l'autre appareil le retrouve. Rien n'est supprimé sans la pierre tombale correspondante.
+     */
+    suspend fun fusionner(c: Context, a: ApercuFusion): Resultat = try {
+        withContext(Dispatchers.IO) {
+            val (actuel, _) = instantane(c)
+            val f = fichierSecours(c); if (f.exists()) f.delete()
+            androidx.security.crypto.EncryptedFile.Builder(c, f, cleSecours(c), androidx.security.crypto.EncryptedFile.FileEncryptionScheme.AES256_GCM_HKDF_4KB).build()
+                .openFileOutput().use { it.write(SauvegardeCrypto.archiver(actuel)) }
+        }
+        val bilan = withContext(Dispatchers.IO) { Base.avecBase(c) { DepotFusion.appliquer(it, a.plan) } }
+        // La sauvegarde de l'autre appareil est maintenant intégrée : elle n'est plus une « autre » sauvegarde à craindre
+        reglages(c).edit().putString("sauv_connu_maj", a.majLe).apply(); retenirConnu(c, a.appareil); effacerAlerte(c)
+        val envoi = envoyer(c, a.cles, forcer = true)
+        val ign = if (bilan.ignores.isEmpty()) "" else " ${bilan.ignores.size} élément(s) ignoré(s) (${bilan.ignores.take(3).joinToString(" ; ")})."
+        Resultat(envoi.ok, "Fusion faite : ${bilan.ajoutes} ajout(s), ${bilan.modifies} modification(s), ${bilan.supprimes} suppression(s).$ign " +
+            if (envoi.ok) "Le résultat est publié en ligne. Une copie de secours de vos données d'avant est gardée (rétablissable)." else "Mais la publication en ligne a échoué : ${envoi.message}")
+    } catch (e: Erreur) { Resultat(false, e.message ?: "Fusion impossible") } catch (e: Exception) { Resultat(false, "Fusion impossible : ${e.message ?: e.javaClass.simpleName}") }
 
     /** Fichier (chiffré par le téléphone) où est gardée la copie de secours d'AVANT la dernière restauration. */
     private fun fichierSecours(c: Context) = File(File(c.filesDir, "avant_restauration").also { it.mkdirs() }, "donnees.enc")

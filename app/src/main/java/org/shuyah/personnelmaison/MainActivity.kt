@@ -28,6 +28,8 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.lifecycleScope
 import android.content.Intent
 import android.widget.Toast
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import kotlinx.coroutines.launch
 
 /** Les écrans de l'application. Les quatre premiers sont les onglets du bas ; les autres s'ouvrent par-dessus. */
@@ -383,21 +385,35 @@ private fun Racine() {
 
 /** Titre d'écran avec, à droite, des tuiles d'action éventuelles. */
 @Composable
-fun Titre(texte: String, retour: (() -> Unit)? = null, actions: @Composable RowScope.() -> Unit = {}) =
+fun Titre(texte: String, retour: (() -> Unit)? = null, actions: @Composable RowScope.() -> Unit = {}, actualiser: (() -> Unit)? = null) =
     Row(Modifier.fillMaxWidth().background(BleuNuit).padding(horizontal = 12.dp, vertical = 12.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
         if (retour != null) Icon(Icons.Filled.ArrowBack, "Retour", tint = Color.White, modifier = Modifier.size(28.dp).padding(end = 8.dp).clickable { retour() })
         Text(texte, color = Color.White, fontSize = 18.sp, modifier = Modifier.weight(1f))
         BarreEtat()                                          // date/heure et batterie, dans toutes les barres de titre
         Spacer(Modifier.width(8.dp))
+        // 1.67 : « Actualiser » (pictogramme + légende) dans le bandeau noir de chaque écran
+        if (actualiser != null) Row(Modifier.clip(RoundedCornerShape(50)).clickable { actualiser() }.padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            Icon(Icons.Filled.Refresh, "Actualiser", tint = Color.White, modifier = Modifier.size(20.dp)); Text(" Actualiser", color = Color.White, fontSize = 13.sp)
+        }
         actions()
     }
+
+/** Compteur d'actualisation commun : « Actualiser » le fait avancer et chaque écran reconstruit son contenu (relecture des préférences et des données). */
+object Actualisation { var version by androidx.compose.runtime.mutableIntStateOf(0) }
 
 /** Conteneur défilant des écrans (marge et espacement communs). */
 @Composable
 fun Page(titre: String, retour: (() -> Unit)? = null, actions: @Composable RowScope.() -> Unit = {}, contenu: @Composable ColumnScope.() -> Unit) = Column(Modifier.fillMaxSize()) {
-    Titre(titre, retour, actions)
+    val c = androidx.compose.ui.platform.LocalContext.current
+    val portee = androidx.compose.runtime.rememberCoroutineScope()
+    var enCours by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    // 1.67 : « Actualiser » dans le bandeau noir de TOUS les écrans : « … en cours » tout de suite, puis le résultat (jamais silencieux)
+    Titre(titre, retour, actions, actualiser = {
+        if (!enCours) { enCours = true; Toast.makeText(c.applicationContext, "Actualisation en cours…", Toast.LENGTH_SHORT).show()
+            portee.launch { val m = try { SauvegardeEnLigne.actualiser(c) } catch (e: Exception) { "Écran actualisé." }; Actualisation.version++; enCours = false; Toast.makeText(c.applicationContext, m, Toast.LENGTH_LONG).show() } }
+    })
     Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        contenu()
+        androidx.compose.runtime.key(Actualisation.version) { contenu() }
         Text(Version.libelle(), fontSize = 11.sp, color = Gris, modifier = Modifier.padding(top = 6.dp, bottom = 16.dp))
     }
 }
