@@ -57,7 +57,11 @@ object SauvegardeEnLigne {
     private fun connu(c: Context) = reglages(c).getString("sauv_connu", null)
     private fun retenirConnu(c: Context, appareil: String?) { if (appareil != null) reglages(c).edit().putString("sauv_connu", appareil).apply() }
     /** Vrai si le casier a été mis à jour en dernier par une AUTRE installation que celles que je connais : l'écraser ferait perdre ses données. */
-    fun estAutreAppareil(c: Context, e: Existante?): Boolean = e?.appareil != null && e.appareil != monAppareil(c) && e.appareil != connu(c)
+    // 1.63 : on compare la DATE de la sauvegarde (et non plus seulement l'appareil) : si l'autre appareil a sauvegardé de nouveau APRÈS que j'ai restauré sa sauvegarde, l'alerte revient.
+    private fun connuMaj(c: Context) = reglages(c).getString("sauv_connu_maj", null)
+    fun estAutreAppareil(c: Context, e: Existante?): Boolean = e?.appareil != null && e.appareil != monAppareil(c) && e.majLe != connuMaj(c)
+    /** « Je suis à jour » : la sauvegarde actuelle de l'autre appareil est connue (comparée ou ignorée en connaissance de cause) : l'alerte tombe jusqu'à sa prochaine sauvegarde. */
+    fun ignorerAlerte(c: Context) { alerteAutreAppareil(c)?.let { reglages(c).edit().putString("sauv_connu_maj", it).apply() }; effacerAlerte(c) }
 
     /** Identifiant de sauvegarde (e-mail ou téléphone) de cette installation, gardé en clair sur le téléphone seulement (pour l'afficher masqué). */
     fun identifiant(c: Context): String? = reglages(c).getString("sauv_identifiant", null)
@@ -242,7 +246,7 @@ object SauvegardeEnLigne {
     // ---------------------------------------------------------------- restauration
     /** Ce que contient la sauvegarde (vérifié en rouvrant sa base) et ce que contient ce téléphone : montré AVANT de remplacer quoi que ce soit. */
     class Apercu(val entrees: Map<String, ByteArray>, val cles: SauvegardeCrypto.Cles, val sauvegarde: Map<String, Long>, val pieces: Int, val telephone: Map<String, Long>,
-                 val identifiant: String = "", val appareil: String? = null, val ancienne: Boolean = false, val fichier: Boolean = false) {
+                 val identifiant: String = "", val appareil: String? = null, val majLe: String = "", val ancienne: Boolean = false, val fichier: Boolean = false) {
         val vide get() = total(sauvegarde) == 0L
         val telephoneVide get() = total(telephone) == 0L
     }
@@ -266,18 +270,18 @@ object SauvegardeEnLigne {
                 r.body!!.bytes()
             }
         }
-        analyser(c, chiffre, cl, if (ancienne) "" else identifiant, infos?.appareil, ancienne, fichier = false)
+        analyser(c, chiffre, cl, if (ancienne) "" else identifiant, infos?.appareil, ancienne, fichier = false, majLe = infos?.majLe.orEmpty())
     } catch (e: Erreur) { Pair(null, Resultat(false, e.message ?: "Restauration impossible")) } catch (e: Exception) { Pair(null, Resultat(false, "Restauration impossible : ${e.message ?: e.javaClass.simpleName}")) }
 
     /** Déchiffre et VÉRIFIE une valise (reçue du serveur ou lue dans un fichier) sans rien modifier sur le téléphone. Même contrôle dans les deux cas. */
-    private suspend fun analyser(c: Context, chiffre: ByteArray, cl: SauvegardeCrypto.Cles, identifiant: String, appareil: String?, ancienne: Boolean, fichier: Boolean): Pair<Apercu?, Resultat> {
+    private suspend fun analyser(c: Context, chiffre: ByteArray, cl: SauvegardeCrypto.Cles, identifiant: String, appareil: String?, ancienne: Boolean, fichier: Boolean, majLe: String = ""): Pair<Apercu?, Resultat> {
         val entrees = try { SauvegardeCrypto.ouvrir(SauvegardeCrypto.dechiffrer(cl.chiffre, chiffre)) } catch (e: IllegalArgumentException) { throw Erreur(e.message ?: "Phrase secrète inexacte") }
         if (entrees["manifeste"]?.let { String(it).startsWith("personnel-maison;") } != true || entrees["base/${Base.NOM_FICHIER}"] == null || entrees["secrets/cle_base"] == null)
             throw Erreur("Cette sauvegarde n'est pas celle de Personnel de maison")
         val (sauv, tel) = withContext(Dispatchers.IO) {
             Pair(Base.compterCopie(c, entrees["base/${Base.NOM_FICHIER}"]!!, entrees["base/${Base.NOM_FICHIER}-wal"], String(entrees["secrets/cle_base"]!!)), Base.compterLive(c))
         }
-        return Pair(Apercu(entrees, cl, sauv, entrees.keys.count { it.startsWith("pieces/") }, tel, identifiant, appareil, ancienne, fichier), Resultat(true, ""))
+        return Pair(Apercu(entrees, cl, sauv, entrees.keys.count { it.startsWith("pieces/") }, tel, identifiant, appareil, majLe, ancienne, fichier), Resultat(true, ""))
     }
 
     // ---------------------------------------------------------------- COPIE DE SÉCURITÉ SUR LE TÉLÉPHONE (version 1.61, demande du propriétaire)
@@ -353,7 +357,7 @@ object SauvegardeEnLigne {
             // Restauration EN LIGNE : la sauvegarde reste active avec les mêmes clés. Restauration depuis un FICHIER avec identifiant : la sauvegarde en ligne est activée avec ces clés et la
             // première sauvegarde part à la prochaine ouverture (« sauv_dernier » = 0) ; depuis un fichier ancien (phrase seule), on n'active rien de nouveau.
             if (!(a.fichier && a.ancienne)) retenir(c, a.cles, a.identifiant.ifBlank { null })
-            effacerAlerte(c); retenirConnu(c, a.appareil)                                                  // l'installation dont je viens de restaurer la sauvegarde n'est plus une « autre » installation
+            effacerAlerte(c); retenirConnu(c, a.appareil); if (a.majLe.isNotEmpty()) reglages(c).edit().putString("sauv_connu_maj", a.majLe).apply()                                                  // l'installation dont je viens de restaurer la sauvegarde n'est plus une « autre » installation
             reglages(c).edit().putLong("sauv_dernier", if (a.fichier) 0L else System.currentTimeMillis()).apply()
         }
         Resultat(true, "Données restaurées : ${resumer(a.sauvegarde, a.pieces)}" + if (a.ancienne) ". Cette sauvegarde date d'avant l'identifiant : pour la protéger d'une phrase identique chez quelqu'un d'autre, désactivez la sauvegarde puis réactivez-la avec votre e-mail ou téléphone." else "")
