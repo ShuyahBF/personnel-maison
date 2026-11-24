@@ -55,6 +55,8 @@ fun EcranSauvegarde(retour: () -> Unit) = Page("Sauvegarde en ligne", retour) {
     val aMigrer = SauvegardeEnLigne.aMigrer(c)
     var autre by remember { mutableStateOf<Pair<String, SauvegardeEnLigne.Existante>?>(null) }   // « activer » | « sauvegarder » + sauvegarde d'un AUTRE appareil trouvée dans le casier
     var confirmation by remember { mutableStateOf("") }
+    var changer by remember { mutableStateOf(false) }                                      // fenêtre « Changer mon e-mail ou téléphone » (1.66)
+    var nouvelId by remember { mutableStateOf("") }
     var occupe by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     var confirmer by remember { mutableStateOf<String?>(null) }        // "restaurer" | "precedente" | "desactiver"
@@ -164,6 +166,7 @@ fun EcranSauvegarde(retour: () -> Unit) = Page("Sauvegarde en ligne", retour) {
         GrosBouton(Icons.Filled.CloudUpload, "Sauvegarder maintenant", Vert, actif = !occupe) { lancer("Sauvegarde en cours…", { SauvegardeEnLigne.sauvegarder(c) }) }
         GrosBouton(Icons.Filled.CloudDownload, "Restaurer la dernière sauvegarde", Bleu, actif = !occupe) { confirmer = "restaurer"; phrase = "" }
         GrosBouton(Icons.Filled.History, "Restaurer la version précédente", Bleu, actif = !occupe, sousTexte = "Si la dernière sauvegarde est abîmée") { confirmer = "precedente"; phrase = "" }
+        GrosBouton(Icons.Filled.Edit, "Changer mon e-mail ou téléphone", Orange, actif = !occupe, sousTexte = "La phrase secrète est redemandée") { changer = true; nouvelId = ""; phrase = "" }
         GrosBouton(Icons.Filled.CloudOff, "Désactiver et effacer en ligne", Rouge, actif = !occupe) { confirmer = "desactiver" }
     } else {
         Carte(if (mode == "local") "Ce téléphone seulement" else "Activer la sauvegarde en ligne", Icons.Filled.Key) {
@@ -230,6 +233,22 @@ fun EcranSauvegarde(retour: () -> Unit) = Page("Sauvegarde en ligne", retour) {
             } },
             dismissButton = { Tuile(Icons.Filled.Close, "Annuler", Orange) { copie = null; octetsLus = null } })
     }
+
+    // CHANGER L'IDENTIFIANT (1.66) : la phrase est redemandée et vérifiée ; avertissement clair avant de continuer
+    if (changer) AlertDialog(onDismissRequest = { changer = false }, title = { Text("Changer mon e-mail ou téléphone") },
+        text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("ATTENTION : la sauvegarde passe dans un NOUVEAU casier lié à ce nouvel identifiant, puis l'ancien casier est effacé (seulement après vérification en ligne). " +
+                "Sur vos AUTRES appareils, vous devrez saisir le même nouvel identifiant, sinon ils continueront à sauvegarder dans l'ancien. Vos données ne sont pas modifiées.", fontSize = 14.sp, color = Rouge)
+            SauvegardeEnLigne.identifiant(c)?.let { Text("Identifiant actuel : ${SauvegardeCrypto.masquerIdentifiant(it)}", fontSize = 14.sp, color = Gris) }
+            OutlinedTextField(value = nouvelId, onValueChange = { nouvelId = it }, label = { Text("Nouvel e-mail ou téléphone") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                supportingText = { Text("Avec l'indicatif pour un numéro (ex. +226 70 00 00 00).") })
+            ChampPhrase("Votre phrase secrète actuelle", phrase) { phrase = it }
+        } },
+        confirmButton = { Tuile(Icons.Filled.Check, "Changer", Vert, actif = !occupe && SauvegardeCrypto.identifiantValide(nouvelId) && SauvegardeCrypto.phraseValide(phrase)) {
+            changer = false
+            lancer("Changement en cours (envoi dans le nouveau casier, vérification)…", { SauvegardeEnLigne.changerIdentifiant(c, phrase, nouvelId) }) { if (it.ok) { phrase = ""; nouvelId = "" } }
+        } },
+        dismissButton = { Tuile(Icons.Filled.Close, "Annuler", Orange) { changer = false } })
 
     // AUTRE APPAREIL (1.60) : le casier contient déjà une sauvegarde faite par une autre installation. Jamais écrasée en silence.
     autre?.let { (quoi, e) ->

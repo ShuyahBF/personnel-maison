@@ -369,11 +369,31 @@ object SauvegardeEnLigne {
                     // ancien casier : effacé seulement maintenant que le nouveau est vérifié (un échec ici est sans gravité : il reste inutilisé)
                     val effacement = try { withContext(Dispatchers.IO) { appel(c, SauvegardeCrypto.Cles(ancienId, ancienJeton, ByteArray(32)), "DELETE").use { it.isSuccessful || it.code == 404 } } } catch (e: Erreur) { false }
                     Resultat(true, "Sauvegarde passée à votre identifiant (${SauvegardeCrypto.masquerIdentifiant(identifiant)}) et vérifiée en ligne." +
-                        if (effacement) " L'ancienne sauvegarde (phrase seule) a été effacée." else " L'ancienne sauvegarde n'a pas pu être effacée maintenant : elle reste inutilisée.")
+                        if (effacement) " L'ancien casier a été effacé. Sur vos AUTRES appareils, saisissez aussi ce nouvel identifiant (Changer mon e-mail ou téléphone)." else " L'ancien casier n'a pas pu être effacé maintenant : il reste inutilisé.")
                 }
             }
         }
     } catch (e: Erreur) { Resultat(false, e.message ?: "Passage impossible") } catch (e: Exception) { Resultat(false, "Passage impossible : ${e.message ?: e.javaClass.simpleName}") }
+
+    /**
+     * CHANGER L'E-MAIL OU LE TÉLÉPHONE du casier (1.66, demande du propriétaire : l'identifiant saisi au départ n'était pas le bon). Il faut RETAPER la phrase : elle est vérifiée contre les clés
+     * du casier actuel (preuve que c'est bien la bonne personne devant le téléphone) ; puis même mécanisme sûr que `migrer` : envoi dans le NOUVEAU casier, relecture en ligne, nouvelles clés
+     * retenues, et seulement alors l'ancien casier est effacé. Les AUTRES appareils doivent saisir le même nouvel identifiant (sinon ils sauvegardent dans l'ancien casier).
+     */
+    suspend fun changerIdentifiant(c: Context, phrase: String, nouvelIdentifiant: String, forcer: Boolean = false): Resultat = try {
+        if (!actif(c)) Resultat(false, "La sauvegarde en ligne n'est pas activée")
+        else if (!SauvegardeCrypto.identifiantValide(nouvelIdentifiant)) Resultat(false, "Saisissez une adresse e-mail valide ou un numéro de téléphone d'au moins 8 chiffres")
+        else {
+            val actuel = identifiant(c)
+            if (actuel != null && SauvegardeCrypto.normaliserIdentifiant(actuel) == SauvegardeCrypto.normaliserIdentifiant(nouvelIdentifiant)) Resultat(false, "C'est déjà l'identifiant de cette sauvegarde")
+            else {
+                // La phrase doit redonner EXACTEMENT les clés du casier actuel
+                val verif = withContext(Dispatchers.Default) { if (actuel != null) SauvegardeCrypto.deriver(phrase, actuel) else SauvegardeCrypto.deriver(phrase) }
+                if (verif.id != Base.secrets(c).getString("sauv_id", null)) Resultat(false, "Phrase secrète inexacte : l'identifiant n'a PAS été changé et votre sauvegarde est intacte.")
+                else migrer(c, phrase, nouvelIdentifiant, forcer)
+            }
+        }
+    } catch (e: Erreur) { Resultat(false, e.message ?: "Changement impossible") } catch (e: Exception) { Resultat(false, "Changement impossible : ${e.message ?: e.javaClass.simpleName}") }
 
     /** Fichier (chiffré par le téléphone) où est gardée la copie de secours d'AVANT la dernière restauration. */
     private fun fichierSecours(c: Context) = File(File(c.filesDir, "avant_restauration").also { it.mkdirs() }, "donnees.enc")
