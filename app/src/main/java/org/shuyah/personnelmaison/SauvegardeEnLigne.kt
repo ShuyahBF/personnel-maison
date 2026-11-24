@@ -454,7 +454,7 @@ object SauvegardeEnLigne {
             androidx.security.crypto.EncryptedFile.Builder(c, f, cleSecours(c), androidx.security.crypto.EncryptedFile.FileEncryptionScheme.AES256_GCM_HKDF_4KB).build()
                 .openFileOutput().use { it.write(SauvegardeCrypto.archiver(actuel)) }
         }
-        val bilan = withContext(Dispatchers.IO) { Base.avecBase(c) { DepotFusion.appliquer(it, a.plan) } }
+        val bilan = withContext(Dispatchers.IO) { Base.ecrireEtRafraichir(c) { DepotFusion.appliquer(it, a.plan) } }       // 1.70 : les écrans se relisent tout de suite
         // La sauvegarde de l'autre appareil est maintenant intégrée : elle n'est plus une « autre » sauvegarde à craindre
         reglages(c).edit().putString("sauv_connu_maj", a.majLe).apply(); retenirConnu(c, a.appareil); effacerAlerte(c)
         val envoi = envoyer(c, a.cles, forcer = true)

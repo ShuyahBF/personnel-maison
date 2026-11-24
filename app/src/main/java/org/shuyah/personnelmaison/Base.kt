@@ -564,6 +564,17 @@ object Base {
     /** Exécute un bloc sur NOTRE base ouverte (lecture et écriture, 1.67 : fusion de deux appareils). */
     fun <T> avecBase(c: Context, bloc: (androidx.sqlite.db.SupportSQLiteDatabase) -> T): T = synchronized(this) { dao(c); bloc(instance!!.openHelper.writableDatabase) }
 
+    /**
+     * ÉCRITURE DIRECTE puis RAFRAÎCHISSEMENT DES ÉCRANS (1.70). Les écrans lisent la base par des « flux » que Room ne relit que lorsqu'il apprend qu'une table a changé ; une écriture faite
+     * directement par SQL (comme la fusion de deux appareils) ne le prévient pas : la base est à jour mais l'écran reste figé sur les anciennes données jusqu'au prochain redémarrage.
+     * Ici, après l'écriture, on demande explicitement à Room de relire les tables modifiées : les écrans se mettent à jour tout de suite.
+     */
+    fun <T> ecrireEtRafraichir(c: Context, bloc: (androidx.sqlite.db.SupportSQLiteDatabase) -> T): T {
+        val r = avecBase(c, bloc)
+        try { synchronized(this) { instance?.invalidationTracker?.refreshVersionsAsync() } } catch (e: Exception) { /* au pire, l'écran se mettra à jour au prochain redémarrage */ }
+        return r
+    }
+
     /** Ouvre une COPIE de la base (octets du fichier + journal WAL, clé donnée) à part, le temps d'un bloc, puis la referme et efface la copie (1.67 : lire la base de l'autre appareil). */
     fun <T> avecCopie(c: Context, principal: ByteArray, wal: ByteArray?, cle: String, bloc: (SQLiteDatabase) -> T): T {
         SQLiteDatabase.loadLibs(c)
