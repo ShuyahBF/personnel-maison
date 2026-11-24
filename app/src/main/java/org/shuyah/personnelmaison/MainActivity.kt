@@ -91,6 +91,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        Plantage.installer(this)                              // mémoire des plantages (1.73)
         Presence.demarrer(lifecycleScope)
         PlanificateurMedicaments.planifierTout(this)          // rappels de médicaments : alarmes remises à jour à chaque ouverture
         PlanificateurRepas.planifierTout(this)                // rappels de repas : alarmes remises à jour à chaque ouverture
