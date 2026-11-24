@@ -48,6 +48,12 @@ object FusionAppareils {
         }
     }
 
+    /**
+     * GARDE-FOU de la synchronisation AUTOMATIQUE (1.71) : un plan n'est appliqué sans confirmation que s'il supprime très peu (3 fiches au plus ET moins d'un cinquième des fiches de ce téléphone).
+     * Au-delà, la personne confirme elle-même, avec le détail sous les yeux (fusion manuelle). Fonction pure, testée.
+     */
+    fun planSur(plan: Plan, nombreDeFiches: Int): Boolean = plan.suppressions <= 3 && plan.suppressions * 5 <= maxOf(nombreDeFiches, 5)
+
     /** Tables fusionnées, PARENTS AVANT ENFANTS (un lien ne peut viser qu'une fiche déjà présente). Les pièces jointes (fichiers) ne sont pas fusionnées dans ce lot. */
     val ORDRE = listOf("societes", "personnels", "medicaments", "operations", "mesures_enregistrees", "profil", "pointages", "notes", "evaluations", "journal_pointages",
         "horaires_personnel", "numeros", "paiements", "versements", "taches", "lignes_operation", "prises_medicament")

@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.lifecycleScope
 import android.content.Intent
 import android.widget.Toast
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import kotlinx.coroutines.launch
@@ -298,6 +299,22 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
 @Composable
 private fun Racine() {
     val c = androidx.compose.ui.platform.LocalContext.current
+    // 1.71 : SYNCHRONISATION AUTOMATIQUE entre appareils, seulement quand l'application est AU PREMIER PLAN : un tour au démarrage puis toutes les 45 s ; chaque changement reçu est annoncé
+    val cycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(Unit) {
+        cycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+            var dernierMessage = ""
+            while (true) {
+                if (SauvegardeEnLigne.actif(c) && SauvegardeEnLigne.synchroAutoActive(c)) {
+                    val r = SauvegardeEnLigne.synchroniser(c)
+                    val annoncer = r.recu.isNotEmpty() || (!r.ok && r.message.isNotBlank() && r.message != dernierMessage)       // jamais silencieux : un changement reçu ou un problème nouveau
+                    if (annoncer) Toast.makeText(c.applicationContext, r.message, Toast.LENGTH_LONG).show()
+                    dernierMessage = if (r.ok) "" else r.message
+                }
+                kotlinx.coroutines.delay(45_000)
+            }
+        }
+    }
     // « Texte plus grand » : agrandit tout le texte de l'application (par défaut oui)
     var grosTexte by remember { mutableStateOf(Reglages.grosTexte(c)) }
     val surGrosTexte: (Boolean) -> Unit = { grosTexte = it; Reglages.grosTexte(c, it) }
@@ -398,7 +415,10 @@ fun Titre(texte: String, retour: (() -> Unit)? = null, actions: @Composable RowS
             actions()
         }
         // Ligne 2 (1.68) : date, heure et batterie sous le titre, pour ne plus écraser le titre
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) { BarreEtat() }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            if (SauvegardeEnLigne.etatSynchro.isNotEmpty()) Text(SauvegardeEnLigne.etatSynchro + "  ·  ", color = Color.White.copy(alpha = 0.9f), fontSize = 11.sp, maxLines = 1)
+            BarreEtat()
+        }
     }
 
 /** Compteur d'actualisation commun : « Actualiser » le fait avancer et chaque écran reconstruit son contenu (relecture des préférences et des données). */

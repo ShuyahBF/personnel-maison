@@ -125,3 +125,15 @@ class FusionAppareilsRemplacementTest {
         assertTrue(plan.details.any { it.contains("pointages · 2026-11-24") && it.contains("depart 16:40 → 16:50") })
     }
 }
+
+/** 1.71 : garde-fou de la synchronisation automatique (peu de suppressions seulement, sans confirmation). */
+class FusionAppareilsGardeFouTest {
+    private fun planAvecSuppressions(n: Int) = FusionAppareils.Plan((1..n).map { FusionAppareils.Operation.Supprimer("pointages", "u$it") })
+    @Test fun peuDeSuppressionsPasseSansConfirmation() {
+        assertTrue(FusionAppareils.planSur(planAvecSuppressions(0), 45)); assertTrue(FusionAppareils.planSur(planAvecSuppressions(1), 45)); assertTrue(FusionAppareils.planSur(planAvecSuppressions(3), 45))
+    }
+    @Test fun beaucoupDeSuppressionsDemandeConfirmation() {
+        assertTrue(!FusionAppareils.planSur(planAvecSuppressions(4), 500))                  // plus de 3
+        assertTrue(!FusionAppareils.planSur(planAvecSuppressions(3), 10))                   // plus d'un cinquième d'un petit téléphone
+    }
+}
