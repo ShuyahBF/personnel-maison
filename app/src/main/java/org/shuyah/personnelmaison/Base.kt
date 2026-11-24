@@ -1,6 +1,7 @@
 package org.shuyah.personnelmaison
 
 import android.content.Context
+import androidx.room.withTransaction
 import androidx.room.*
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
@@ -560,6 +561,12 @@ object Base {
             } finally { db.close() }
         } finally { dossier.deleteRecursively() }
     }
+
+    /**
+     * ÉCRITURE ATOMIQUE (1.77) : toutes les écritures du bloc réussissent ensemble ou aucune n'est gardée (comme une transaction HFSQL). Indispensable pour qu'un enregistrement
+     * qui échoue puisse être REJOUÉ sans doublon par la réparation automatique (`lancerSecurise`). Le bloc ne doit contenir que des accès à la base (pas de fichier, de réseau ni de dialogue).
+     */
+    suspend fun <T> atomique(c: Context, bloc: suspend () -> T): T { dao(c); return instance!!.withTransaction { bloc() } }
 
     /** Exécute un bloc sur NOTRE base ouverte (lecture et écriture, 1.67 : fusion de deux appareils). */
     fun <T> avecBase(c: Context, bloc: (androidx.sqlite.db.SupportSQLiteDatabase) -> T): T = synchronized(this) { dao(c); bloc(instance!!.openHelper.writableDatabase) }

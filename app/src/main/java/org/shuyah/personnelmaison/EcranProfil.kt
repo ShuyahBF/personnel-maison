@@ -104,9 +104,11 @@ fun EcranProfil(retour: () -> Unit) {
         RangeeTuiles {
             Tuile(Icons.Filled.Check, "Enregistrer", Vert, actif = charge) {
                 scope.lancerSecurise(c, "EcranProfil") {
+                    Base.atomique(c) {
                     dao.enregistrerProfil(ProfilUtilisateur(1, nom.trim(), prenoms.trim(), email.trim(), adresse.trim(), quartier.trim(), ville.trim(), repere.trim(), latitude, longitude, precision, geoLe,
                         urgenceNom.trim(), urgenceTel.trim(), remarques.trim()))
                     dao.enregistrerNumeros("UTILISATEUR", 1, numeros.toList())
+                    }
                     enregistre = true
                 }
             }

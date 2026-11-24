@@ -199,7 +199,18 @@ fun EcranCorrection(personnelId: Long, date: String, retour: () -> Unit) {
                 Switch(pt?.absent == true, { v -> scope.launch { dao.noterAbsence(personnelId, date, v, motif.trim()) } }); Text("   Absent ce jour-là", fontSize = 18.sp)
             }
             Champ("Motif ou remarque", motif, { motif = it })
-            GrosBouton(Icons.Filled.Check, "Enregistrer le motif", Vert, actif = motif.trim() != (pt?.motif ?: "")) { scope.launch { dao.noterHeure(personnelId, date, Genre.ARRIVEE, pt?.arrivee, motif = motif.trim()) } }
+            // 1.77 : « Enregistrer » est TOUJOURS possible, même si le motif n'a pas changé (demande du propriétaire) ; le résultat est toujours confirmé (jamais un enregistrement silencieux)
+            if (motif.trim() != (pt?.motif ?: "")) Text("Motif modifié, non enregistré", fontSize = 13.sp, color = Orange)
+            GrosBouton(Icons.Filled.Check, "Enregistrer", Vert) {
+                scope.lancerSecurise(c, "EcranCorrection") {
+                    if (pt == null && motif.isBlank()) {
+                        android.widget.Toast.makeText(c.applicationContext, "Rien à enregistrer : notez d'abord une arrivée, un départ ou une absence.", android.widget.Toast.LENGTH_LONG).show()
+                        return@lancerSecurise
+                    }
+                    dao.noterHeure(personnelId, date, Genre.ARRIVEE, pt?.arrivee, motif = motif.trim())
+                    android.widget.Toast.makeText(c.applicationContext, "Pointage enregistré.", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            }
         }
         Carte("Historique de ce jour", Icons.Filled.History) {
             if (journal.isEmpty()) Text("Rien d'enregistré.", fontSize = 15.sp, color = Gris)

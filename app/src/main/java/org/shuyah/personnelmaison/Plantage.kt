@@ -3,6 +3,8 @@ package org.shuyah.personnelmaison
 import android.content.Context
 import android.os.Build
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -44,14 +46,24 @@ object Plantage {
 }
 
 /**
- * FILET DE SÉCURITÉ DES ÉCRANS (1.76) : lance une tâche d'écran (enregistrer, supprimer, synchroniser…) en interceptant TOUTE erreur : elle est notée dans le journal et dans la mémoire
- * des plantages, et un message s'affiche tout de suite, au lieu de fermer l'application. L'annulation normale d'une tâche (changement d'écran) n'est pas une erreur.
+ * FILET DE SÉCURITÉ DES ÉCRANS (1.76) + RÉPARATION AUTOMATIQUE (1.77) : lance une tâche d'écran (enregistrer, supprimer, synchroniser…) en interceptant TOUTE erreur.
+ *   - cause DÉJÀ CONNUE (voir `Reparation`) : on répare puis on REJOUE la tâche une fois, SANS rien afficher (seule une ligne du journal le dit) ;
+ *   - sinon, ou si l'erreur persiste : notée dans le journal et dans la mémoire des plantages, avec un message tout de suite, au lieu de fermer l'application.
+ * L'annulation normale d'une tâche (changement d'écran) n'est pas une erreur.
  */
 fun CoroutineScope.lancerSecurise(c: Context, endroit: String = "écran", bloc: suspend CoroutineScope.() -> Unit): Job = launch {
-    try { bloc() } catch (e: CancellationException) { throw e } catch (e: Throwable) {
-        Plantage.noter(c, "erreur d'écran", endroit, e)
-        android.os.Handler(android.os.Looper.getMainLooper()).post {
+    var reparee = false
+    while (true) {
+        try { bloc(); return@launch } catch (e: CancellationException) { throw e } catch (e: Throwable) {
+            val reparation = if (!reparee) withContext(Dispatchers.IO) { Reparation.tenter(c, e) } else null
+            if (reparation != null) {                                    // solution connue : réparée, rejouée, transparente pour l'utilisateur
+                reparee = true
+                withContext(Dispatchers.IO) { JournalDonnees.evenement(c, "réparation", "$endroit : $reparation (${e.javaClass.simpleName})") }
+                continue
+            }
+            withContext(Dispatchers.IO) { Plantage.noter(c, "erreur d'écran", endroit, e) }
             android.widget.Toast.makeText(c.applicationContext, "Opération impossible : ${e.message ?: e.javaClass.simpleName} (détail gardé dans le journal)", android.widget.Toast.LENGTH_LONG).show()
+            return@launch
         }
     }
 }

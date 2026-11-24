@@ -26,13 +26,27 @@ def instructions():
     return out
 
 
-def monde(rejouer=False):
+ANCIENS = {  # déclencheurs de la 1.64 à 1.74 (clauses de conflit dans le déclencheur) : ceux d'un téléphone qui vient d'être mis à jour
+    "ai": "CREATE TRIGGER `suivi_ai_{t}` AFTER INSERT ON `{t}` BEGIN INSERT OR REPLACE INTO `suivi_fiches` (`t`, `id`, `uid`, `maj`) VALUES ('{t}', NEW.`id`, lower(hex(randomblob(16))), 0); END",
+    "au": "CREATE TRIGGER `suivi_au_{t}` AFTER UPDATE ON `{t}` BEGIN INSERT OR IGNORE INTO `suivi_fiches` (`t`, `id`, `uid`, `maj`) VALUES ('{t}', NEW.`id`, lower(hex(randomblob(16))), 0); UPDATE `suivi_fiches` SET `maj` = 1 WHERE `t` = '{t}' AND `id` = NEW.`id`; END",
+    "ad": "CREATE TRIGGER `suivi_ad_{t}` AFTER DELETE ON `{t}` BEGIN INSERT OR REPLACE INTO `suivi_suppressions` (`t`, `uid`, `maj`) SELECT `t`, `uid`, 0 FROM `suivi_fiches` WHERE `t` = '{t}' AND `id` = OLD.`id`; DELETE FROM `suivi_fiches` WHERE `t` = '{t}' AND `id` = OLD.`id`; END",
+}
+
+
+def monde(rejouer=False, anciens=False):
     """Base vide avec le schéma EXACT de Room + déclencheurs (rejouer=True : installation faite DEUX fois, comme à chaque ouverture de l'application)."""
     db = sqlite3.connect(":memory:")
     for e in SCHEMA["entities"]:
         db.execute(e["createSql"].replace("${TABLE_NAME}", e["tableName"]))
         for i in e.get("indices", []):
             db.execute(i["createSql"].replace("${TABLE_NAME}", e["tableName"]))
+    if anciens:  # téléphone mis à jour : les tables de suivi et les ANCIENS déclencheurs existent déjà, la réparation doit les remplacer
+        db.execute("CREATE TABLE `suivi_fiches` (`t` TEXT NOT NULL, `id` INTEGER NOT NULL, `uid` TEXT NOT NULL, `maj` INTEGER NOT NULL, PRIMARY KEY(`t`, `id`))")
+        db.execute("CREATE UNIQUE INDEX `index_suivi_fiches_uid` ON `suivi_fiches` (`uid`)")
+        db.execute("CREATE TABLE `suivi_suppressions` (`t` TEXT NOT NULL, `uid` TEXT NOT NULL, `maj` INTEGER NOT NULL, PRIMARY KEY(`t`, `uid`))")
+        for e in SCHEMA["entities"]:
+            for sql in ANCIENS.values():
+                db.execute(sql.format(t=e["tableName"]))
     for _ in range(2 if rejouer else 1):
         for s in instructions():
             db.execute(s)
@@ -59,9 +73,9 @@ def ecrire(db, verbe, table, vals):
     db.execute(f"{verbe} INTO `{table}` ({cols}) VALUES ({marq})", list(vals.values()))
 
 
-def audit(e, rejouer):
+def audit(e, rejouer, anciens=False):
     t = e["tableName"]
-    db = monde(rejouer)
+    db = monde(rejouer, anciens)
     pas = []
 
     def etape(nom, f):
@@ -105,13 +119,13 @@ def audit(e, rejouer):
 
 def main():
     echecs = 0
-    for rejouer in (False, True):
+    for rejouer, anciens in ((False, False), (True, False), (False, True)):
         for e in SCHEMA["entities"]:
-            for p in audit(e, rejouer):
+            for p in audit(e, rejouer, anciens):
                 echecs += 1
-                print(f"ÉCHEC [{e['tableName']}{' · déclencheurs rejoués' if rejouer else ''}] {p}")
+                print(f"ÉCHEC [{e['tableName']}{' · déclencheurs rejoués' if rejouer else ''}{' · après réparation des anciens déclencheurs' if anciens else ''}] {p}")
     n = len(SCHEMA["entities"])
-    print(f"Audit des écritures : {n} tables × 2 installations — " + ("TOUT PASSE ✔" if not echecs else f"{echecs} ÉCHEC(S) ✘"))
+    print(f"Audit des écritures : {n} tables × 3 installations (neuve, rejouée, anciens déclencheurs réparés) — " + ("TOUT PASSE ✔" if not echecs else f"{echecs} ÉCHEC(S) ✘"))
     sys.exit(1 if echecs else 0)
 
 
