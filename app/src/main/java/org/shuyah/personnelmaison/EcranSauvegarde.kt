@@ -166,6 +166,23 @@ fun EcranSauvegarde(retour: () -> Unit) = Page("Sauvegarde en ligne", retour) {
                 Text("  Enregistrée automatiquement une fois par jour, à l'ouverture de l'application.", fontSize = 14.sp, color = Gris)
             }
         }
+        // 1.74 : JOURNAL DE TOUTE MODIFICATION DE DONNÉES (qui a touché quoi, quand, d'où : écran / fusion / synchro) pour retrouver l'origine d'un plantage ; jamais le contenu des fiches
+        var journal by remember { mutableStateOf<String?>(null) }
+        var nbJournal by remember { mutableStateOf(JournalDonnees.compter(c)) }
+        Carte("Journal des modifications", Icons.Filled.History) {
+            Text("Chaque ajout, modification ou suppression de donnée est noté (table, numéro de fiche, origine, heure), jamais le contenu. $nbJournal ligne(s) gardée(s) (1000 au plus).", fontSize = 13.sp, color = Gris)
+            RangeeTuiles {
+                Tuile(Icons.Filled.Refresh, "Actualiser") {
+                    annoncer(c, "Lecture du journal en cours…"); nbJournal = JournalDonnees.compter(c); journal = JournalDonnees.texte(c, 60); annoncer(c, "Journal relu : $nbJournal ligne(s)")
+                }
+                Tuile(Icons.Filled.ContentCopy, "Copier") {
+                    (c.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager).setPrimaryClip(android.content.ClipData.newPlainText("Journal", JournalDonnees.texte(c, 500)))
+                    annoncer(c, "Journal copié (500 dernières lignes) : collez-le dans un message.", true)
+                }
+                Tuile(Icons.Filled.Delete, "Vider") { JournalDonnees.vider(c); journal = null; nbJournal = 0; annoncer(c, "Journal vidé.") }
+            }
+            journal?.let { Text(it, fontSize = 10.sp, color = Gris, modifier = Modifier.padding(top = 6.dp)) }
+        }
         // 1.71 : SYNCHRONISATION AUTOMATIQUE (fusion « le plus récent gagne » et publication, sans rien demander), à activer sur CHAQUE appareil
         var auto by remember { mutableStateOf(SauvegardeEnLigne.synchroAutoActive(c)) }
         Carte("Synchronisation automatique", Icons.Filled.Sync) {

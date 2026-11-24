@@ -570,7 +570,7 @@ object Base {
      * Ici, après l'écriture, on demande explicitement à Room de relire les tables modifiées : les écrans se mettent à jour tout de suite.
      */
     fun <T> ecrireEtRafraichir(c: Context, bloc: (androidx.sqlite.db.SupportSQLiteDatabase) -> T): T {
-        val r = avecBase(c, bloc)
+        val r = avecBase(c) { db -> JournalDonnees.avecSource(db, "fusion") { bloc(db) } }      // 1.74 : les écritures de la fusion sont marquées « fusion » dans le journal
         try { synchronized(this) { instance?.invalidationTracker?.refreshVersionsAsync() } } catch (e: Exception) { /* au pire, l'écran se mettra à jour au prochain redémarrage */ }
         return r
     }
@@ -600,7 +600,7 @@ object Base {
             prefs.edit().putString("cle_base", cle).apply()
         }
         return Room.databaseBuilder(c, BaseDonnees::class.java, NOM_FICHIER)
-            .openHelperFactory(SupportFactory(SQLiteDatabase.getBytes(cle.toCharArray()))).addCallback(object : RoomDatabase.Callback() { override fun onOpen(db: androidx.sqlite.db.SupportSQLiteDatabase) { SuiviModifs.installer(db) } })      // 1.64 : suivi des modifications (identifiants uniques, dates, suppressions)
+            .openHelperFactory(SupportFactory(SQLiteDatabase.getBytes(cle.toCharArray()))).addCallback(object : RoomDatabase.Callback() { override fun onOpen(db: androidx.sqlite.db.SupportSQLiteDatabase) { SuiviModifs.installer(db); JournalDonnees.installer(db) } })      // 1.64 : suivi des modifications (identifiants uniques, dates, suppressions)
             .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10).build()
     }
 }

@@ -50,8 +50,8 @@ fun EcranAujourdhui(ouvrir: (Ecran) -> Unit, grosTexte: Boolean, surGrosTexte: (
             Text(texte.take(500), fontSize = 11.sp, color = Gris)
             RangeeTuiles {
                 Tuile(Icons.Filled.ContentCopy, "Copier") {
-                    (c.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager).setPrimaryClip(android.content.ClipData.newPlainText("Plantage", texte))
-                    android.widget.Toast.makeText(c.applicationContext, "Détail copié : collez-le dans un message.", android.widget.Toast.LENGTH_LONG).show()
+                    (c.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager).setPrimaryClip(android.content.ClipData.newPlainText("Plantage", texte + "\n\n--- Journal des modifications (200 dernières lignes) ---\n" + JournalDonnees.texte(c, 200)))   // 1.74 : avec le journal des données
+                    android.widget.Toast.makeText(c.applicationContext, "Détail et journal copiés : collez-les dans un message.", android.widget.Toast.LENGTH_LONG).show()
                 }
                 Tuile(Icons.Filled.Delete, "Effacer") { Plantage.effacer(c); plantage = null }
             }
