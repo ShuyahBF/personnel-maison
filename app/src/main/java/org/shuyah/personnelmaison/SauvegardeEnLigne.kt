@@ -513,6 +513,7 @@ object SauvegardeEnLigne {
         if (!verrouSynchro.tryLock()) return Resultat(true, if (manuel) "Une synchronisation est déjà en cours." else "")
         try {
             etatSynchro = "🔄 en cours…"
+            JournalDonnees.evenement(c, "synchro", "début du tour (${if (manuel) "manuel" else "automatique"})")
             val cles = clesMemorisees(c)
             val infos = existante(c, cles)
             val vu = reglages(c).getString("sync_vu_maj", null)
@@ -545,9 +546,11 @@ object SauvegardeEnLigne {
             etatSynchro = "✓ à jour " + java.text.SimpleDateFormat("HH:mm", java.util.Locale.FRANCE).format(java.util.Date())
             val message = when { recu.isNotEmpty() && envoye -> "Synchronisation : reçu $recu ; résultat publié."; recu.isNotEmpty() -> "Synchronisation : reçu $recu."; envoye -> "Synchronisation : vos modifications sont publiées."
                 else -> "Synchronisation : tout est à jour." }
+            JournalDonnees.evenement(c, "synchro", "fin : $message")
             return Resultat(true, message, recu = recu)
         } catch (e: Exception) {
             etatSynchro = "⚠ hors connexion"
+            JournalDonnees.evenement(c, "synchro", "ERREUR : ${e.javaClass.simpleName} ${e.message ?: ""}")
             return Resultat(false, "Synchronisation impossible : ${e.message ?: e.javaClass.simpleName}")
         } finally { verrouSynchro.unlock() }
     }

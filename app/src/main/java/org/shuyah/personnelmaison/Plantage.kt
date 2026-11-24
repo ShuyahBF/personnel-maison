@@ -31,6 +31,7 @@ object Plantage {
             val texte = "Personnel de maison ${Version.VERSION} · Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}) · ${Build.MANUFACTURER} ${Build.MODEL}\n" +
                 "$nature · $endroit · ${java.text.SimpleDateFormat("dd/MM/yyyy HH:mm:ss", java.util.Locale.FRANCE).format(java.util.Date())}\n\n$pile"
             c.applicationContext.getSharedPreferences(FICHIER, Context.MODE_PRIVATE).edit().putString("dernier", texte).commit()   // commit : écrit avant la fermeture
+            if (nature != "plantage") JournalDonnees.evenement(c, nature, "$endroit : ${erreur.javaClass.simpleName} ${erreur.message ?: ""}")   // erreur interceptée : aussi dans le journal des données
         } catch (_: Throwable) { /* ne jamais aggraver */ }
     }
 
