@@ -16,8 +16,8 @@ class FusionAppareilsTest {
         val tombes = tombes.associateBy { it.table to it.uid }.toMutableMap()
         fun instantane() = Instantane(fiches.values.toList(), tombes.values.toList())
         fun supprimer(t: String, uid: String, maj: Long) { fiches.remove(t to uid); tombes[t to uid] = Tombe(t, uid, maj) }
-        fun fusionnerAvec(autre: Appareil): FusionAppareils.Plan {
-            val plan = FusionAppareils.calculer(instantane(), autre.instantane())
+        fun fusionnerAvec(autre: Appareil, base: BaseAccord = emptyMap()): FusionAppareils.Plan {
+            val plan = FusionAppareils.calculer(instantane(), autre.instantane(), base)
             for (o in plan.operations) when (o) {
                 is Operation.AdopterUid -> fiches.remove(o.table to o.ancien)?.let { fiches[o.table to o.nouveau] = it.copy(uid = o.nouveau) }
                 is Operation.Inserer -> { fiches[o.fiche.table to o.fiche.uid] = o.fiche.copy(champs = o.fiche.champs.mapValues { (k, v) -> if (k in (FusionAppareils.PROTEGEES[o.fiche.table] ?: emptySet())) null else v }); tombes.remove(o.fiche.table to o.fiche.uid) }
@@ -135,5 +135,39 @@ class FusionAppareilsGardeFouTest {
     @Test fun beaucoupDeSuppressionsDemandeConfirmation() {
         assertTrue(!FusionAppareils.planSur(planAvecSuppressions(4), 500))                  // plus de 3
         assertTrue(!FusionAppareils.planSur(planAvecSuppressions(3), 10))                   // plus d'un cinquième d'un petit téléphone
+    }
+}
+
+
+/** 1.72 : fusion CHAMP PAR CHAMP avec l'état du dernier accord (« le motif n'est pas actualisé… ce motif peut ne pas changer »). */
+class FusionAppareilsChampsTest {
+    private fun pt(uid: String, arrivee: Long, motif: String, maj: Long) = FusionAppareils.Fiche("pointages", uid, maj, mapOf("personnelId" to "p1", "date" to "2026-11-24", "arrivee" to arrivee, "motif" to motif))
+    private val accord: BaseAccord = mapOf(("pointages" to "n:p1|2026-11-24") to mapOf("personnelId" to "p1", "date" to "2026-11-24", "arrivee" to 390L, "motif" to ""))
+
+    @Test fun deuxChampsDifferentsModifiesChacunDeSonCoteSontConserves() {
+        val a = FusionAppareilsTest.Appareil(listOf(pt("x", 385, "", 10)))             // A a changé l'heure d'arrivée (6h30 → 6h25)
+        val b = FusionAppareilsTest.Appareil(listOf(pt("x", 390, "retard de bus", 20)))   // B a changé le motif, plus récemment
+        a.fusionnerAvec(b, accord); b.fusionnerAvec(a, accord); a.fusionnerAvec(b, accord)
+        val fiche = a.fiches[("pointages" to "x")]!!
+        assertEquals(385L, fiche.champs["arrivee"]); assertEquals("retard de bus", fiche.champs["motif"])      // l'heure de A ET le motif de B
+        assertEquals(a.contenu(), b.contenu())                                                                  // et les deux appareils convergent
+    }
+    @Test fun unChampNonModifieNEcraseJamaisLaModificationDeLAutre() {
+        val a = FusionAppareilsTest.Appareil(listOf(pt("x", 390, "motif de A", 10)))   // seul le motif a changé sur A
+        val b = FusionAppareilsTest.Appareil(listOf(pt("x", 385, "", 30)))             // B a changé l'heure, PLUS TARD, sans toucher au motif
+        b.fusionnerAvec(a, accord)
+        val fiche = b.fiches[("pointages" to "x")]!!
+        assertEquals(385L, fiche.champs["arrivee"]); assertEquals("motif de A", fiche.champs["motif"])         // avant : le motif de A était perdu (la fiche entière la plus récente gagnait)
+    }
+    @Test fun memeChampModifieDesDeuxCotesLePlusRecentGagne() {
+        val a = FusionAppareilsTest.Appareil(listOf(pt("x", 380, "", 10))); val b = FusionAppareilsTest.Appareil(listOf(pt("x", 395, "", 20)))
+        converge(a, b)
+        assertEquals(395L, a.fiches[("pointages" to "x")]!!.champs["arrivee"])
+    }
+    private fun converge(a: FusionAppareilsTest.Appareil, b: FusionAppareilsTest.Appareil) { a.fusionnerAvec(b, accord); b.fusionnerAvec(a, accord); a.fusionnerAvec(b, accord); assertEquals(a.contenu(), b.contenu()) }
+    @Test fun sansEtatDuDernierAccordLePlusRecentGagne() {
+        val a = FusionAppareilsTest.Appareil(listOf(pt("x", 385, "", 10))); val b = FusionAppareilsTest.Appareil(listOf(pt("x", 390, "motif B", 20)))
+        a.fusionnerAvec(b)
+        assertEquals("motif B", a.fiches[("pointages" to "x")]!!.champs["motif"])                               // comportement d'avant conservé à la première synchronisation
     }
 }
