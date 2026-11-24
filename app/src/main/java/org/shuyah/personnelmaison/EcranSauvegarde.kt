@@ -56,6 +56,7 @@ fun EcranSauvegarde(retour: () -> Unit) = Page("Sauvegarde en ligne", retour) {
     var autre by remember { mutableStateOf<Pair<String, SauvegardeEnLigne.Existante>?>(null) }   // « activer » | « sauvegarder » + sauvegarde d'un AUTRE appareil trouvée dans le casier
     var confirmation by remember { mutableStateOf("") }
     var fusion by remember { mutableStateOf<SauvegardeEnLigne.ApercuFusion?>(null) }       // ce que la fusion ferait, en attente de confirmation (1.67)
+    var relier by remember { mutableStateOf(false) }                                       // fenêtre « Se relier au casier de l'autre appareil » (1.68)
     var changer by remember { mutableStateOf(false) }                                      // fenêtre « Changer mon e-mail ou téléphone » (1.66)
     var nouvelId by remember { mutableStateOf("") }
     var occupe by remember { mutableStateOf(false) }
@@ -158,6 +159,7 @@ fun EcranSauvegarde(retour: () -> Unit) = Page("Sauvegarde en ligne", retour) {
     if (cloud) {
         Carte("Sauvegarde en ligne activée", Icons.Filled.CloudDone) {
             Ligne("Dernière sauvegarde", dateLisible(dernier))
+            SauvegardeEnLigne.empreinteCasier(c)?.let { Ligne("Casier (empreinte)", it) }                // 1.68 : identique sur deux appareils qui partagent le même casier
             SauvegardeEnLigne.identifiant(c)?.let { Ligne("Casier lié à", SauvegardeCrypto.masquerIdentifiant(it)) }
             Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                 Icon(Icons.Filled.Autorenew, null, tint = Vert, modifier = Modifier.size(20.dp))
@@ -169,6 +171,7 @@ fun EcranSauvegarde(retour: () -> Unit) = Page("Sauvegarde en ligne", retour) {
         GrosBouton(Icons.Filled.Sync, "Fusionner avec l'autre appareil", Vert, actif = !occupe, sousTexte = "Le plus récent gagne, fiche par fiche : rien n'est perdu") {
             lancer("Lecture de la sauvegarde en ligne et comparaison en cours…", { val (a, r) = SauvegardeEnLigne.apercuFusion(c); fusion = a; r })
         }
+        GrosBouton(Icons.Filled.Link, "Se relier au casier de l'autre appareil", Orange, actif = !occupe, sousTexte = "Même e-mail et même phrase que l'autre appareil") { relier = true; nouvelId = ""; phrase = "" }
         GrosBouton(Icons.Filled.CloudDownload, "Restaurer la dernière sauvegarde", Bleu, actif = !occupe) { confirmer = "restaurer"; phrase = "" }
         GrosBouton(Icons.Filled.History, "Restaurer la version précédente", Bleu, actif = !occupe, sousTexte = "Si la dernière sauvegarde est abîmée") { confirmer = "precedente"; phrase = "" }
         GrosBouton(Icons.Filled.Edit, "Changer mon e-mail ou téléphone", Orange, actif = !occupe, sousTexte = "La phrase secrète est redemandée") { changer = true; nouvelId = ""; phrase = "" }
@@ -242,6 +245,10 @@ fun EcranSauvegarde(retour: () -> Unit) = Page("Sauvegarde en ligne", retour) {
     // FUSION (1.67) : ce qui va changer, montré AVANT de confirmer
     fusion?.let { f -> AlertDialog(onDismissRequest = { fusion = null }, title = { Text("Fusionner avec l'autre appareil") },
         text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            // 1.68 : DIAGNOSTIC — de quelle sauvegarde parle-t-on ? (une fusion « sans différence » avec SA PROPRE sauvegarde ne prouve rien)
+            Text("Sauvegarde comparée : ${f.majLe.take(16).replace('T', ' ')} UTC, " + (if (f.faiteParCetAppareil(c)) "faite par CET appareil" else "faite par l'AUTRE appareil") + ". Casier ${f.empreinte}. " +
+                "Fiches : ${f.nbIci} ici, ${f.nbEnLigne} en ligne.", fontSize = 13.sp, color = Gris)
+            if (f.faiteParCetAppareil(c)) Text("⚠ Cette sauvegarde est la VÔTRE : l'autre appareil n'utilise pas ce casier (e-mail ou phrase différents). Utilisez « Se relier au casier de l'autre appareil ».", fontSize = 15.sp, color = Rouge)
             Text(f.plan.resume(), fontSize = 16.sp, color = if (f.plan.vide) Vert else BleuNuit)
             if (!f.plan.vide) Text("Pour chaque fiche, la version la plus récente l'emporte ; une fiche supprimée d'un côté est supprimée de l'autre sauf si elle a été modifiée après. Vos données actuelles sont mises de côté (rétablissables) avant la fusion, puis le résultat est publié en ligne pour l'autre appareil. Les pièces jointes (photos de pièces) ne sont pas fusionnées.", fontSize = 14.sp, color = Gris)
         } },
@@ -249,6 +256,19 @@ fun EcranSauvegarde(retour: () -> Unit) = Page("Sauvegarde en ligne", retour) {
             lancer("Fusion en cours (copie de secours, application, publication)…", { SauvegardeEnLigne.fusionner(c, f) })
         } },
         dismissButton = { Tuile(Icons.Filled.Close, "Annuler", Orange) { fusion = null } }) }
+
+    // SE RELIER AU CASIER DE L'AUTRE APPAREIL (1.68) : aucune donnée envoyée ni remplacée
+    if (relier) AlertDialog(onDismissRequest = { relier = false }, title = { Text("Se relier au casier de l'autre appareil") },
+        text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Saisissez EXACTEMENT le même e-mail ou téléphone et la même phrase que sur l'autre appareil. Ce téléphone adoptera son casier ; aucune donnée n'est envoyée ni remplacée. Ensuite, « Fusionner avec l'autre appareil » compare et fusionne.", fontSize = 14.sp, color = Gris)
+            OutlinedTextField(value = nouvelId, onValueChange = { nouvelId = it }, label = { Text("E-mail ou téléphone de l'autre appareil") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            ChampPhrase("Phrase secrète de l'autre appareil", phrase) { phrase = it }
+        } },
+        confirmButton = { Tuile(Icons.Filled.Link, "Relier", Vert, actif = !occupe && SauvegardeCrypto.identifiantValide(nouvelId) && SauvegardeCrypto.phraseValide(phrase)) {
+            relier = false
+            lancer("Recherche du casier en cours…", { SauvegardeEnLigne.relierAuCasier(c, phrase, nouvelId) }) { if (it.ok) { phrase = ""; nouvelId = "" } }
+        } },
+        dismissButton = { Tuile(Icons.Filled.Close, "Annuler", Orange) { relier = false } })
 
     // CHANGER L'IDENTIFIANT (1.66) : la phrase est redemandée et vérifiée ; avertissement clair avant de continuer
     if (changer) AlertDialog(onDismissRequest = { changer = false }, title = { Text("Changer mon e-mail ou téléphone") },
