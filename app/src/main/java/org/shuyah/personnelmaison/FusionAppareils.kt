@@ -12,6 +12,9 @@ package org.shuyah.personnelmaison
  * Les liens entre fiches (le pointage d'une personne…) ne sont PAS des numéros locaux mais l'`uid` de la fiche parente : ils sont donc comparables d'un téléphone à l'autre.
  * Ce fichier ne touche à AUCUNE base de données : il calcule seulement un PLAN d'opérations (testé sans téléphone). L'application du plan est dans DepotFusion.kt.
  */
+/** L'état de chaque fiche lors de la dernière synchronisation réussie : (table, cleBase) → champs. Sert à savoir QUEL CÔTÉ a changé QUEL champ. */
+typealias BaseAccord = Map<Pair<String, String>, Map<String, Any?>>
+
 object FusionAppareils {
     /** Une fiche normalisée : `champs` = colonnes de la table SAUF `id` ; les colonnes de lien (clés étrangères) contiennent l'`uid` du parent (texte) ou null. */
     data class Fiche(val table: String, val uid: String, val maj: Long, val champs: Map<String, Any?>)
@@ -46,6 +49,33 @@ object FusionAppareils {
             if (rapprochements > 0) l.add("$rapprochements fiche(s) identique(s) rapprochée(s)")
             return if (l.isEmpty()) "Aucune différence : les deux appareils sont à jour." else l.joinToString(" ; ")
         }
+    }
+
+    /** Clé sous laquelle on retrouve l'état « du dernier accord » d'une fiche : sa clé naturelle si elle en a une (l'identifiant change quand la fiche est enregistrée de nouveau), sinon son identifiant. */
+    fun cleBase(f: Fiche): String = cleNaturelle(f)?.let { "n:$it" } ?: "u:${f.uid}"
+    /** L'état de chaque fiche lors de la dernière synchronisation réussie : (table, cleBase) → champs. Sert à savoir QUEL CÔTÉ a changé QUEL champ. */
+
+    /**
+     * FUSION CHAMP PAR CHAMP (1.72, demande du propriétaire : « le motif n'est pas actualisé… ce motif peut ne pas changer »). Avec l'état du dernier accord (`base`) :
+     *   - champ identique des deux côtés → inchangé ; champ changé seulement ICI → on le garde ; champ changé seulement sur l'AUTRE appareil → on le prend ;
+     *   - champ changé des DEUX côtés, différemment → le plus récent gagne (égalité : départage stable, identique sur les deux appareils).
+     * Un champ que l'autre appareil n'a pas touché n'écrase donc JAMAIS une modification faite ici. Sans base (première synchronisation) : « le plus récent gagne » pour la fiche entière.
+     */
+    fun fusionnerChamps(ici: Fiche, autre: Fiche, base: Map<String, Any?>?): Map<String, Any?> {
+        if (base == null) return if (plusRecent(autre, ici)) autre.champs else ici.champs
+        val protegees = PROTEGEES[autre.table] ?: emptySet()
+        val gagneAutre = autre.maj > ici.maj || (autre.maj == ici.maj && autre.champs.toString() > ici.champs.toString())
+        val r = LinkedHashMap<String, Any?>()
+        for (k in (ici.champs.keys + autre.champs.keys)) {
+            val l = ici.champs[k]; val p = autre.champs[k]; val b = base[k]
+            r[k] = when {
+                k in protegees || l == p -> l
+                l == b -> p
+                p == b -> l
+                else -> if (gagneAutre) p else l
+            }
+        }
+        return r
     }
 
     /**
@@ -87,7 +117,7 @@ object FusionAppareils {
      * Calcule le plan pour amener CE téléphone (`local`) au niveau de l'AUTRE (`pair`) : « le plus récent gagne ». Fonction pure et déterministe.
      * Convergence : fusionner A avec B puis B avec A donne le même contenu (les égalités de date se départagent par l'identifiant unique).
      */
-    fun calculer(local: Instantane, pair: Instantane): Plan {
+    fun calculer(local: Instantane, pair: Instantane, base: BaseAccord = emptyMap()): Plan {
         val localParUid = local.fiches.associateBy { it.table to it.uid }
         val localParCle = local.fiches.mapNotNull { f -> cleNaturelle(f)?.let { (f.table to it) to f } }.toMap()
         val tombesLocales = local.tombes.associate { (it.table to it.uid) to it.maj }
@@ -99,8 +129,9 @@ object FusionAppareils {
         for (table in ORDRE) for (f in pair.fiches.filter { it.table == table }) {
             val cle = f.table to f.uid
             val ici = localParUid[cle]
-            if (ici != null) {                                                                 // même fiche des deux côtés : la plus récente l'emporte
-                if (plusRecent(f, ici)) { ops.add(Operation.Mettre(f)); details.add("modification : " + decrire(f) + " (" + differences(ici, f) + ")") }
+            if (ici != null) {                                                                 // même fiche des deux côtés : fusion CHAMP PAR CHAMP (le plus récent gagne seulement si les deux côtés ont changé le même champ)
+                val voulu = fusionnerChamps(ici, f, base[f.table to cleBase(ici)])
+                if (voulu != ici.champs) { ops.add(Operation.Mettre(f.copy(champs = voulu, maj = maxOf(ici.maj, f.maj)))); details.add("modification : " + decrire(f) + " (" + differences(ici, f.copy(champs = voulu)) + ")") }
                 continue
             }
             // Même fiche LOGIQUE créée ou remplacée des deux côtés (pointage de la même personne le même jour…) : la clé naturelle passe AVANT la pierre tombale
@@ -110,7 +141,8 @@ object FusionAppareils {
                 if (cle !in deja) {
                     val garde = minOf(nat.uid, f.uid)
                     if (garde != nat.uid) ops.add(Operation.AdopterUid(f.table, nat.uid, garde))
-                    if (plusRecent(f, nat)) { ops.add(Operation.Mettre(f.copy(uid = garde))); details.add("modification : " + decrire(f) + " (" + differences(nat, f) + ")") }
+                    val voulu = fusionnerChamps(nat, f, base[f.table to cleBase(nat)])
+                    if (voulu != nat.champs) { ops.add(Operation.Mettre(f.copy(uid = garde, champs = voulu, maj = maxOf(nat.maj, f.maj)))); details.add("modification : " + decrire(f) + " (" + differences(nat, f.copy(champs = voulu)) + ")") }
                     deja.add(f.table to nat.uid)
                 }
                 continue
@@ -147,7 +179,7 @@ object FusionAppareils {
     }
 
     /** La fiche de l'autre appareil est-elle STRICTEMENT plus récente, ou de même date mais de contenu différent avec le plus petit identifiant (départage stable) ? */
-    private fun plusRecent(autre: Fiche, ici: Fiche): Boolean {
+    fun plusRecent(autre: Fiche, ici: Fiche): Boolean {
         val champsIdentiques = autre.champs.filterKeys { k -> k !in (PROTEGEES[autre.table] ?: emptySet()) } == ici.champs.filterKeys { k -> k !in (PROTEGEES[ici.table] ?: emptySet()) }
         if (champsIdentiques) return false
         if (autre.maj != ici.maj) return autre.maj > ici.maj

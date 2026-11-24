@@ -439,9 +439,9 @@ object SauvegardeEnLigne {
                 if (!DepotFusion.aLeSuivi(r)) throw Erreur("Cette sauvegarde date d'avant la version 1.64 (pas de suivi des modifications). Faites d'abord « Sauvegarder maintenant » depuis l'appareil qui a vos données, avec la 1.64 ou plus.")
                 DepotFusion.lire(r)
             }
-            val local = Base.avecBase(c) { DepotFusion.lire(DepotFusion.requeteurRoom(it)) }
+            val (local, base) = Base.avecBase(c) { val r = DepotFusion.requeteurRoom(it); Pair(DepotFusion.lire(r), DepotFusion.lireBase(r)) }
             nbIci = local.fiches.size; nbPair = pair.fiches.size
-            FusionAppareils.calculer(local, pair)
+            FusionAppareils.calculer(local, pair, base)
         }
         Pair(ApercuFusion(plan, cles, infos.appareil, infos.majLe, nbIci, nbPair), Resultat(true, plan.resume()))
     } catch (e: Erreur) { Pair(null, Resultat(false, e.message ?: "Comparaison impossible")) } catch (e: Exception) { Pair(null, Resultat(false, "Comparaison impossible : ${e.message ?: e.javaClass.simpleName}")) }
@@ -453,6 +453,7 @@ object SauvegardeEnLigne {
     suspend fun fusionner(c: Context, a: ApercuFusion): Resultat = try {
         val bilan = appliquerFusion(c, a)
         val envoi = envoyer(c, a.cles, forcer = true)
+        if (envoi.ok) try { retenirAccord(c) } catch (e: Exception) { }
         val ign = if (bilan.ignores.isEmpty()) "" else " ${bilan.ignores.size} élément(s) ignoré(s) (${bilan.ignores.take(3).joinToString(" ; ")})."
         Resultat(envoi.ok, "Fusion faite : ${bilan.ajoutes} ajout(s), ${bilan.modifies} modification(s), ${bilan.supprimes} suppression(s).$ign " +
             if (envoi.ok) "Le résultat est publié en ligne. Une copie de secours de vos données d'avant est gardée (rétablissable)." else "Mais la publication en ligne a échoué : ${envoi.message}")
@@ -487,6 +488,8 @@ object SauvegardeEnLigne {
         val b = r.lignes("SELECT COUNT(*) AS n, COALESCE(MAX(maj), 0) AS m FROM suivi_suppressions", emptyArray()).first()
         "${a["n"]}/${a["s"]}/${a["m"]}/${b["n"]}/${b["m"]}"
     }
+    /** Les deux appareils viennent d'être mis d'accord : on retient l'état actuel comme « dernier accord » (sert à la fusion champ par champ du prochain tour). */
+    private suspend fun retenirAccord(c: Context) = withContext(Dispatchers.IO) { Base.avecBase(c) { db -> DepotFusion.ecrireBase(db, DepotFusion.lire(DepotFusion.requeteurRoom(db))) } }
     private fun publicationsRecentes(c: Context): List<Long> {
         val limite = System.currentTimeMillis() - 3600_000L
         return (reglages(c).getString("sync_pubs", "") ?: "").split(',').mapNotNull { it.toLongOrNull() }.filter { it > limite }
@@ -538,6 +541,7 @@ object SauvegardeEnLigne {
                 noterPublication(c); envoye = true
                 reglages(c).edit().putString("sync_vu_maj", existante(c, cles)?.majLe ?: "").putString("sync_sig", withContext(Dispatchers.IO) { signatureLocale(c) }).apply()
             }
+            try { retenirAccord(c) } catch (e: Exception) { /* sans base, la prochaine fusion retombe sur « le plus récent gagne » */ }
             etatSynchro = "✓ à jour " + java.text.SimpleDateFormat("HH:mm", java.util.Locale.FRANCE).format(java.util.Date())
             val message = when { recu.isNotEmpty() && envoye -> "Synchronisation : reçu $recu ; résultat publié."; recu.isNotEmpty() -> "Synchronisation : reçu $recu."; envoye -> "Synchronisation : vos modifications sont publiées."
                 else -> "Synchronisation : tout est à jour." }

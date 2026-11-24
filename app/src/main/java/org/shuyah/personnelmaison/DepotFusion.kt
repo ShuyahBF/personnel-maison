@@ -59,6 +59,32 @@ object DepotFusion {
         return Instantane(fiches, tombes)
     }
 
+    /** Valeur lue dans du JSON : entiers en Long, décimaux en Double (comparables aux valeurs lues dans les tables). */
+    private fun normaliser(v: Any?): Any? = when (v) { null, org.json.JSONObject.NULL -> null; is Int -> v.toLong(); is Long -> v; is Number -> v.toDouble(); else -> v }
+
+    /** État de chaque fiche lors de la dernière synchronisation réussie (table `suivi_base`, dans la base chiffrée). Vide si jamais enregistré. Ne lève jamais d'exception. */
+    fun lireBase(r: Requeteur): BaseAccord = try {
+        r.lignes("SELECT t, cle, champs FROM suivi_base", emptyArray()).associate { ligne ->
+            val o = org.json.JSONObject(ligne["champs"] as String)
+            (ligne["t"] as String to (ligne["cle"] as String)) to o.keys().asSequence().associateWith { k -> normaliser(o.get(k)) }
+        }
+    } catch (e: Exception) { emptyMap() }
+
+    /** Enregistre l'état actuel comme « dernier accord » (à appeler quand les deux appareils viennent d'être mis d'accord). Remplace l'ancien état, en une transaction. */
+    fun ecrireBase(db: SupportSQLiteDatabase, inst: Instantane) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS `suivi_base` (`t` TEXT NOT NULL, `cle` TEXT NOT NULL, `champs` TEXT NOT NULL, PRIMARY KEY(`t`, `cle`))")
+        db.beginTransaction()
+        try {
+            db.execSQL("DELETE FROM suivi_base")
+            for (f in inst.fiches) {
+                val o = org.json.JSONObject()
+                for ((k, v) in f.champs) o.put(k, v ?: org.json.JSONObject.NULL)
+                db.execSQL("INSERT OR REPLACE INTO suivi_base (t, cle, champs) VALUES (?, ?, ?)", arrayOf(f.table, FusionAppareils.cleBase(f), o.toString()))
+            }
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
+    }
+
     /** Bilan d'une application de plan. */
     class Bilan(val ajoutes: Int, val modifies: Int, val supprimes: Int, val ignores: List<String>)
 
