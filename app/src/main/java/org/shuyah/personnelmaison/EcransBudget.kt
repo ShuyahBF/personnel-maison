@@ -304,6 +304,7 @@ fun EcranFormOperation(id: Long?, genreInitial: String, scanDirect: Boolean, ret
                   } catch (e: Throwable) {
                     Plantage.noter(c, "erreur d'enregistrement", "EcranOperation", e)
                     message = "Enregistrement impossible : ${e.javaClass.simpleName} ${e.message ?: ""}. Le détail est gardé (Aide)."
+                    android.widget.Toast.makeText(c.applicationContext, "Enregistrement impossible : ${e.message ?: e.javaClass.simpleName}", android.widget.Toast.LENGTH_LONG).show()    // visible tout de suite (1.75)
                   }
                 }
             }
