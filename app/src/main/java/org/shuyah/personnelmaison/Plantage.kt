@@ -2,6 +2,10 @@ package org.shuyah.personnelmaison
 
 import android.content.Context
 import android.os.Build
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 
 /**
  * MÉMOIRE DES PLANTAGES (1.73) : quand l'application plante, le détail technique (message + pile d'appels) est écrit dans un petit fichier
@@ -37,4 +41,17 @@ object Plantage {
 
     fun dernier(c: Context): String? = c.getSharedPreferences(FICHIER, Context.MODE_PRIVATE).getString("dernier", null)
     fun effacer(c: Context) { c.getSharedPreferences(FICHIER, Context.MODE_PRIVATE).edit().remove("dernier").apply() }
+}
+
+/**
+ * FILET DE SÉCURITÉ DES ÉCRANS (1.76) : lance une tâche d'écran (enregistrer, supprimer, synchroniser…) en interceptant TOUTE erreur : elle est notée dans le journal et dans la mémoire
+ * des plantages, et un message s'affiche tout de suite, au lieu de fermer l'application. L'annulation normale d'une tâche (changement d'écran) n'est pas une erreur.
+ */
+fun CoroutineScope.lancerSecurise(c: Context, endroit: String = "écran", bloc: suspend CoroutineScope.() -> Unit): Job = launch {
+    try { bloc() } catch (e: CancellationException) { throw e } catch (e: Throwable) {
+        Plantage.noter(c, "erreur d'écran", endroit, e)
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
+            android.widget.Toast.makeText(c.applicationContext, "Opération impossible : ${e.message ?: e.javaClass.simpleName} (détail gardé dans le journal)", android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
 }

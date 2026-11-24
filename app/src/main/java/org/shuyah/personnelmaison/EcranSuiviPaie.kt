@@ -81,7 +81,7 @@ fun BlocSuiviPaie(personnel: Personnel) {
                 }
                 Text(Calculs.francs(v.montant), fontSize = 15.sp, color = Vert, textAlign = TextAlign.End)
                 Icon(Icons.Filled.Delete, "Supprimer ce versement", tint = Rouge, modifier = Modifier.padding(start = 10.dp).size(24.dp).clickable {
-                    scope.launch { dao.supprimerVersement(v.id); Toast.makeText(c, "Versement supprimé", Toast.LENGTH_SHORT).show() } })
+                    scope.lancerSecurise(c, "EcranSuiviPaie") { dao.supprimerVersement(v.id); Toast.makeText(c, "Versement supprimé", Toast.LENGTH_SHORT).show() } })
             }
         }
         Spacer(Modifier.height(8.dp))
@@ -121,7 +121,7 @@ fun BlocSuiviPaie(personnel: Personnel) {
                 }
             },
             confirmButton = { Tuile(Icons.Filled.Check, "Valider", Vert, actif = (montant.toLongOrNull() ?: 0) > 0) {
-                scope.launch {
+                scope.lancerSecurise(c, "EcranSuiviPaie") {
                     dao.ajouterVersement(Versement(personnelId = personnel.id, mois = mois.toString(), date = date, montant = montant.toLong(), mode = mode, note = note.trim()))
                     Toast.makeText(c, "Paiement enregistré : ${Calculs.francs(montant.toLong())}", Toast.LENGTH_SHORT).show()
                 }; dialogue = false

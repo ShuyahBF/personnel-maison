@@ -623,8 +623,8 @@ private fun MesuresEnregistrees(retour: () -> Unit) {
             }
         }
     }
-    ouverte?.let { m -> DetailMesure(m, fermer = { ouverte = null }) { nom, note -> scope.launch { dao.modifierMesure(m.id, nom, note) }; Toast.makeText(c, "Mesure modifiée.", Toast.LENGTH_SHORT).show(); ouverte = null } }
-    aSupprimer?.let { m -> Confirmation("Supprimer cette mesure ?", "« ${m.nom} » sera supprimée définitivement.", { scope.launch { dao.supprimerMesure(m.id) }; Toast.makeText(c, "Mesure supprimée.", Toast.LENGTH_SHORT).show(); aSupprimer = null }, { aSupprimer = null }) }
+    ouverte?.let { m -> DetailMesure(m, fermer = { ouverte = null }) { nom, note -> scope.lancerSecurise(c, "EcranMesure") { dao.modifierMesure(m.id, nom, note) }; Toast.makeText(c, "Mesure modifiée.", Toast.LENGTH_SHORT).show(); ouverte = null } }
+    aSupprimer?.let { m -> Confirmation("Supprimer cette mesure ?", "« ${m.nom} » sera supprimée définitivement.", { scope.lancerSecurise(c, "EcranMesure") { dao.supprimerMesure(m.id) }; Toast.makeText(c, "Mesure supprimée.", Toast.LENGTH_SHORT).show(); aSupprimer = null }, { aSupprimer = null }) }
 }
 
 /** Détail d'une mesure enregistrée : nom et note modifiables, côtés, et coordonnées des points (en cm depuis le premier point). */

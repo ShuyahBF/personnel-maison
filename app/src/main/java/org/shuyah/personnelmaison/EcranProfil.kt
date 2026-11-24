@@ -103,7 +103,7 @@ fun EcranProfil(retour: () -> Unit) {
         Carte("Autres informations utiles", Icons.Filled.Notes) { Champ("Remarques (langue parlée, informations pour les personnels…)", remarques, { remarques = it; enregistre = false }, lignes = 3) }
         RangeeTuiles {
             Tuile(Icons.Filled.Check, "Enregistrer", Vert, actif = charge) {
-                scope.launch {
+                scope.lancerSecurise(c, "EcranProfil") {
                     dao.enregistrerProfil(ProfilUtilisateur(1, nom.trim(), prenoms.trim(), email.trim(), adresse.trim(), quartier.trim(), ville.trim(), repere.trim(), latitude, longitude, precision, geoLe,
                         urgenceNom.trim(), urgenceTel.trim(), remarques.trim()))
                     dao.enregistrerNumeros("UTILISATEUR", 1, numeros.toList())

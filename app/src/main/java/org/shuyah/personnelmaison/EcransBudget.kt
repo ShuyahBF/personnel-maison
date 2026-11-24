@@ -115,8 +115,8 @@ fun EcranFicheOperation(id: Long, ouvrir: (Ecran) -> Unit, retour: () -> Unit) {
         if (lignes.isNotEmpty()) Carte("Détail", Icons.Filled.ListAlt) {
             // Version 1.6 : chaque ligne se coche comme une liste de courses (type Google Keep) ; un appui sur la ligne ou la case bascule l'état.
             lignes.forEach { l ->
-                Row(Modifier.fillMaxWidth().clickable { scope.launch { dao.cocherLigneOperation(l.id, !l.coche) } }.padding(vertical = 1.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = l.coche, onCheckedChange = { v -> scope.launch { dao.cocherLigneOperation(l.id, v) } })
+                Row(Modifier.fillMaxWidth().clickable { scope.lancerSecurise(c, "EcransBudget") { dao.cocherLigneOperation(l.id, !l.coche) } }.padding(vertical = 1.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = l.coche, onCheckedChange = { v -> scope.lancerSecurise(c, "EcransBudget") { dao.cocherLigneOperation(l.id, v) } })
                     Text((if (l.quantite != 1.0) "${trim(l.quantite)} × " else "") + l.libelle, Modifier.weight(1f), fontSize = 14.sp,
                         color = if (l.coche) Gris else BleuNuit, textDecoration = if (l.coche) TextDecoration.LineThrough else TextDecoration.None)
                     Text(Calculs.francs(l.montant), fontSize = 14.sp, color = if (l.coche) Gris else BleuNuit, textAlign = TextAlign.End)
@@ -149,7 +149,7 @@ fun EcranFicheOperation(id: Long, ouvrir: (Ecran) -> Unit, retour: () -> Unit) {
         }
     }
     if (suppression) Confirmation("Supprimer cette opération ?", "L'opération, son détail et les photos des pièces seront effacés définitivement.", {
-        scope.launch { supprimerOperationComplete(c, dao, id) }; suppression = false; retour()
+        scope.lancerSecurise(c, "EcransBudget") { supprimerOperationComplete(c, dao, id) }; suppression = false; retour()
     }, { suppression = false })
 }
 
@@ -205,7 +205,7 @@ fun EcranFormOperation(id: Long?, genreInitial: String, scanDirect: Boolean, ret
 
     // Photo ou image → copie chiffrée + OCR + pré-remplissage (jamais d'écrasement d'une valeur déjà saisie)
     val traiter: (android.net.Uri) -> Unit = { uri ->
-        scope.launch {
+        scope.lancerSecurise(c, "EcransBudget") {
             occupe = true; message = null
             val image = Pieces.charger(c, uri, 2000)
             if (image == null) message = "Image illisible."
@@ -289,7 +289,7 @@ fun EcranFormOperation(id: Long?, genreInitial: String, scanDirect: Boolean, ret
         }
         RangeeTuiles {
             Tuile(Icons.Filled.Check, "Enregistrer", Vert, actif = !occupe && (montantFinal > 0 || somme > 0)) {
-                scope.launch {
+                scope.lancerSecurise(c, "EcransBudget") {
                   try {                                       // 1.73 : une erreur d'enregistrement est notée et affichée, jamais un plantage
                     val total = if (montantFinal > 0) montantFinal else somme
                     val maintenant = System.currentTimeMillis()
@@ -337,14 +337,14 @@ fun EcranPieceOperation(id: Long, retour: () -> Unit) {
             message?.let { Text(it, fontSize = 13.sp, color = Vert) }
             Spacer(Modifier.height(6.dp))
             RangeeTuiles {
-                Tuile(Icons.Filled.Check, "Enregistrer", Vert, actif = texte != piece?.texte) { scope.launch { piece?.let { p -> dao.modifierPieceOperation(p.copy(texte = texte)); piece = p.copy(texte = texte); message = "Texte enregistré ✓" } } }
-                Tuile(Icons.Filled.Refresh, "Relire l'image", Bleu, actif = image != null) { scope.launch { image?.let { texte = Pieces.lireTexte(it); message = "Texte relu : enregistrez pour le garder." } } }
+                Tuile(Icons.Filled.Check, "Enregistrer", Vert, actif = texte != piece?.texte) { scope.lancerSecurise(c, "EcransBudget") { piece?.let { p -> dao.modifierPieceOperation(p.copy(texte = texte)); piece = p.copy(texte = texte); message = "Texte enregistré ✓" } } }
+                Tuile(Icons.Filled.Refresh, "Relire l'image", Bleu, actif = image != null) { scope.lancerSecurise(c, "EcransBudget") { image?.let { texte = Pieces.lireTexte(it); message = "Texte relu : enregistrez pour le garder." } } }
                 Tuile(Icons.Filled.Delete, "Supprimer", Rouge) { suppression = true }
             }
         }
     }
     if (suppression) Confirmation("Supprimer cette pièce ?", "La photo chiffrée et son texte seront effacés.", {
-        scope.launch { piece?.let { Pieces.supprimer(c, it.fichier); dao.supprimerPieceOperation(it.id) } }; suppression = false; retour()
+        scope.lancerSecurise(c, "EcransBudget") { piece?.let { Pieces.supprimer(c, it.fichier); dao.supprimerPieceOperation(it.id) } }; suppression = false; retour()
     }, { suppression = false })
 }
 
