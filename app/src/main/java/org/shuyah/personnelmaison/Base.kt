@@ -574,6 +574,7 @@ object Base {
             prefs.edit().putString("cle_base", cle).apply()
         }
         return Room.databaseBuilder(c, BaseDonnees::class.java, NOM_FICHIER)
-            .openHelperFactory(SupportFactory(SQLiteDatabase.getBytes(cle.toCharArray()))).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10).build()
+            .openHelperFactory(SupportFactory(SQLiteDatabase.getBytes(cle.toCharArray()))).addCallback(object : RoomDatabase.Callback() { override fun onOpen(db: androidx.sqlite.db.SupportSQLiteDatabase) { SuiviModifs.installer(db) } })      // 1.64 : suivi des modifications (identifiants uniques, dates, suppressions)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10).build()
     }
 }
