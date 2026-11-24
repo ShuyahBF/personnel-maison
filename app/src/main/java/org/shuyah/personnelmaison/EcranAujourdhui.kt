@@ -43,6 +43,19 @@ fun EcranAujourdhui(ouvrir: (Ecran) -> Unit, grosTexte: Boolean, surGrosTexte: (
         Text(Calculs.dateLongue(aujourdhui), fontSize = 20.sp, color = BleuNuit)
         GrosBouton(Icons.Filled.AccessTime, "Noter une arrivée ou un départ", Vert) { ouvrir(Ecran.Noter) }
         GrosBouton(Icons.Filled.EditNote, "Corriger un pointage", Bleu) { ouvrir(Ecran.Corrections) }
+        // 1.73 : dernier plantage / erreur gardé sur le téléphone, à copier pour le support (rien n'est envoyé tout seul)
+        var plantage by remember { mutableStateOf(Plantage.dernier(c)) }
+        plantage?.let { texte -> Carte {
+            Text("⚠ L'application s'est arrêtée la dernière fois. Détail gardé :", fontSize = 14.sp, color = Rouge)
+            Text(texte.take(500), fontSize = 11.sp, color = Gris)
+            RangeeTuiles {
+                Tuile(Icons.Filled.ContentCopy, "Copier") {
+                    (c.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager).setPrimaryClip(android.content.ClipData.newPlainText("Plantage", texte))
+                    android.widget.Toast.makeText(c.applicationContext, "Détail copié : collez-le dans un message.", android.widget.Toast.LENGTH_LONG).show()
+                }
+                Tuile(Icons.Filled.Delete, "Effacer") { Plantage.effacer(c); plantage = null }
+            }
+        } }
         // 1.62 : une sauvegarde d'un AUTRE appareil existe dans ce casier : rien n'est écrasé, on invite à comparer puis choisir
         alerteAutre?.let { Carte(modifier = Modifier.clickable { ouvrir(Ecran.Sauvegarde) }) {
             Text("⚠ Un autre appareil a sauvegardé le ${it.take(16).replace('T', ' ')}. Rien n'a été écrasé : comparez les deux et choisissez (touchez ici).", fontSize = 15.sp, color = Rouge)
