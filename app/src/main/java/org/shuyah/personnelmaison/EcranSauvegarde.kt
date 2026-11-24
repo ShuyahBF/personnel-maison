@@ -166,6 +166,16 @@ fun EcranSauvegarde(retour: () -> Unit) = Page("Sauvegarde en ligne", retour) {
                 Text("  Enregistrée automatiquement une fois par jour, à l'ouverture de l'application.", fontSize = 14.sp, color = Gris)
             }
         }
+        // 1.71 : SYNCHRONISATION AUTOMATIQUE (fusion « le plus récent gagne » et publication, sans rien demander), à activer sur CHAQUE appareil
+        var auto by remember { mutableStateOf(SauvegardeEnLigne.synchroAutoActive(c)) }
+        Carte("Synchronisation automatique", Icons.Filled.Sync) {
+            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Switch(checked = auto, onCheckedChange = { oui -> auto = oui; SauvegardeEnLigne.activerSynchroAuto(c, oui)
+                    if (oui) lancer("Première synchronisation en cours…", { SauvegardeEnLigne.synchroniser(c, manuel = true) }) else { message = "Synchronisation automatique désactivée sur ce téléphone."; annoncer(c, message!!, true) } })
+                Text("  " + if (auto) "Activée : fusion et publication toutes les 45 secondes quand l'application est ouverte, et à « Actualiser »." else "Désactivée.", fontSize = 15.sp, color = BleuNuit)
+            }
+            Text("À activer sur chaque appareil. Une copie de secours est faite avant chaque fusion ; au-delà de 3 suppressions, la fusion attend votre confirmation. Les photos de pièces ne sont pas synchronisées.", fontSize = 13.sp, color = Gris)
+        }
         GrosBouton(Icons.Filled.CloudUpload, "Sauvegarder maintenant", Vert, actif = !occupe) { lancer("Sauvegarde en cours…", { SauvegardeEnLigne.sauvegarder(c) }) }
         // 1.67 : fusion fiche par fiche avec l'autre appareil (« le plus récent gagne »), aperçu avant confirmation, copie de secours automatique
         GrosBouton(Icons.Filled.Sync, "Fusionner avec l'autre appareil", Vert, actif = !occupe, sousTexte = "Le plus récent gagne, fiche par fiche : rien n'est perdu") {

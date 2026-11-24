@@ -1,6 +1,8 @@
 package org.shuyah.personnelmaison
 
 import android.content.Context
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
@@ -42,7 +44,7 @@ object SauvegardeEnLigne {
     fun choisirLocal(c: Context) = reglages(c).edit().putString("sauv_mode", "local").apply()
 
     /** Résultat d'une opération : message lisible pour l'écran. */
-    class Resultat(val ok: Boolean, val message: String, val autreAppareil: Existante? = null)
+    class Resultat(val ok: Boolean, val message: String, val autreAppareil: Existante? = null, val recu: String = "")
 
     /** Ce que le serveur sait de la sauvegarde d'un casier : date, taille et l'installation (identifiant ALÉATOIRE, rien de personnel) qui l'a faite en dernier (null : sauvegarde ancienne). */
     class Existante(val majLe: String, val taille: Long, val appareil: String?)
@@ -255,6 +257,7 @@ object SauvegardeEnLigne {
      */
     suspend fun actualiser(c: Context): String {
         if (!actif(c)) return "Écran actualisé. (Sauvegarde en ligne non activée : rien à comparer avec un autre appareil.)"
+        if (synchroAutoActive(c)) return synchroniser(c, manuel = true).message                     // 1.71 : « Actualiser » synchronise vraiment quand la synchronisation automatique est activée
         verifierAutreAppareil(c)
         val a = alerteAutreAppareil(c)
         return if (a != null) "⚠ Un autre appareil a sauvegardé le ${a.take(16).replace('T', ' ')}. Ouvrez Sauvegarde en ligne → « Fusionner avec l'autre appareil »."
@@ -263,7 +266,7 @@ object SauvegardeEnLigne {
 
     /** Sauvegarde automatique : une fois par jour à l'ouverture, en mode « cloud ». Rend null si rien n'était à faire. */
     suspend fun sauvegardeAutomatique(c: Context): Resultat? =
-        if (actif(c) && System.currentTimeMillis() - dernierEnvoi(c) > INTERVALLE_AUTO_MS) sauvegarder(c) else null
+        if (actif(c) && !synchroAutoActive(c) && System.currentTimeMillis() - dernierEnvoi(c) > INTERVALLE_AUTO_MS) sauvegarder(c) else null
 
     // ---------------------------------------------------------------- restauration
     /** Ce que contient la sauvegarde (vérifié en rouvrant sa base) et ce que contient ce téléphone : montré AVANT de remplacer quoi que ce soit. */
@@ -448,20 +451,102 @@ object SauvegardeEnLigne {
      * pour que l'autre appareil le retrouve. Rien n'est supprimé sans la pierre tombale correspondante.
      */
     suspend fun fusionner(c: Context, a: ApercuFusion): Resultat = try {
+        val bilan = appliquerFusion(c, a)
+        val envoi = envoyer(c, a.cles, forcer = true)
+        val ign = if (bilan.ignores.isEmpty()) "" else " ${bilan.ignores.size} élément(s) ignoré(s) (${bilan.ignores.take(3).joinToString(" ; ")})."
+        Resultat(envoi.ok, "Fusion faite : ${bilan.ajoutes} ajout(s), ${bilan.modifies} modification(s), ${bilan.supprimes} suppression(s).$ign " +
+            if (envoi.ok) "Le résultat est publié en ligne. Une copie de secours de vos données d'avant est gardée (rétablissable)." else "Mais la publication en ligne a échoué : ${envoi.message}")
+    } catch (e: Erreur) { Resultat(false, e.message ?: "Fusion impossible") } catch (e: Exception) { Resultat(false, "Fusion impossible : ${e.message ?: e.javaClass.simpleName}") }
+
+    /** Copie de secours chiffrée de NOS données, puis application du plan (sans publier). Partagée par la fusion manuelle et la synchronisation automatique. */
+    private suspend fun appliquerFusion(c: Context, a: ApercuFusion): DepotFusion.Bilan {
         withContext(Dispatchers.IO) {
             val (actuel, _) = instantane(c)
             val f = fichierSecours(c); if (f.exists()) f.delete()
             androidx.security.crypto.EncryptedFile.Builder(c, f, cleSecours(c), androidx.security.crypto.EncryptedFile.FileEncryptionScheme.AES256_GCM_HKDF_4KB).build()
                 .openFileOutput().use { it.write(SauvegardeCrypto.archiver(actuel)) }
         }
-        val bilan = withContext(Dispatchers.IO) { Base.ecrireEtRafraichir(c) { DepotFusion.appliquer(it, a.plan) } }       // 1.70 : les écrans se relisent tout de suite
+        val bilan = withContext(Dispatchers.IO) { Base.ecrireEtRafraichir(c) { DepotFusion.appliquer(it, a.plan) } }       // les écrans se relisent tout de suite
         // La sauvegarde de l'autre appareil est maintenant intégrée : elle n'est plus une « autre » sauvegarde à craindre
         reglages(c).edit().putString("sauv_connu_maj", a.majLe).apply(); retenirConnu(c, a.appareil); effacerAlerte(c)
-        val envoi = envoyer(c, a.cles, forcer = true)
-        val ign = if (bilan.ignores.isEmpty()) "" else " ${bilan.ignores.size} élément(s) ignoré(s) (${bilan.ignores.take(3).joinToString(" ; ")})."
-        Resultat(envoi.ok, "Fusion faite : ${bilan.ajoutes} ajout(s), ${bilan.modifies} modification(s), ${bilan.supprimes} suppression(s).$ign " +
-            if (envoi.ok) "Le résultat est publié en ligne. Une copie de secours de vos données d'avant est gardée (rétablissable)." else "Mais la publication en ligne a échoué : ${envoi.message}")
-    } catch (e: Erreur) { Resultat(false, e.message ?: "Fusion impossible") } catch (e: Exception) { Resultat(false, "Fusion impossible : ${e.message ?: e.javaClass.simpleName}") }
+        return bilan
+    }
+
+    // ---------------------------------------------------------------- SYNCHRONISATION AUTOMATIQUE (1.71, lot 3 de la refonte : fusion et publication sans rien demander)
+    /** Texte court affiché dans le bandeau noir : « 🔄 en cours », « ✓ à jour 15:42 », « ⚠ … ». Vide quand la synchronisation automatique est coupée. */
+    var etatSynchro by androidx.compose.runtime.mutableStateOf("")
+    private val verrouSynchro = kotlinx.coroutines.sync.Mutex()
+    private const val PUBLICATIONS_MAX_PAR_HEURE = 8                 // le serveur accepte 15 envois par heure et par casier : on garde de la marge pour les envois manuels
+    fun synchroAutoActive(c: Context) = reglages(c).getBoolean("synchro_auto", false)
+    fun activerSynchroAuto(c: Context, oui: Boolean) { reglages(c).edit().putBoolean("synchro_auto", oui).apply(); etatSynchro = if (oui) "🔄 …" else "" }
+
+    /** Empreinte de ce que contient CE téléphone (nombre de fiches, somme et maximum des dates, suppressions) : change dès qu'une fiche est ajoutée, modifiée ou supprimée. */
+    private fun signatureLocale(c: Context): String = Base.avecBase(c) { db ->
+        val r = DepotFusion.requeteurRoom(db)
+        val a = r.lignes("SELECT COUNT(*) AS n, COALESCE(SUM(maj), 0) AS s, COALESCE(MAX(maj), 0) AS m FROM suivi_fiches", emptyArray()).first()
+        val b = r.lignes("SELECT COUNT(*) AS n, COALESCE(MAX(maj), 0) AS m FROM suivi_suppressions", emptyArray()).first()
+        "${a["n"]}/${a["s"]}/${a["m"]}/${b["n"]}/${b["m"]}"
+    }
+    private fun publicationsRecentes(c: Context): List<Long> {
+        val limite = System.currentTimeMillis() - 3600_000L
+        return (reglages(c).getString("sync_pubs", "") ?: "").split(',').mapNotNull { it.toLongOrNull() }.filter { it > limite }
+    }
+    private fun noterPublication(c: Context) = reglages(c).edit().putString("sync_pubs", (publicationsRecentes(c) + System.currentTimeMillis()).joinToString(",")).apply()
+    private fun clesMemorisees(c: Context): SauvegardeCrypto.Cles {
+        val s = Base.secrets(c)
+        return SauvegardeCrypto.Cles(s.getString("sauv_id", null) ?: throw Erreur("La sauvegarde en ligne n'est pas activée"), s.getString("sauv_jeton", null) ?: throw Erreur("Jeton absent"),
+            deHex(s.getString("sauv_chiffre", null) ?: throw Erreur("Clé absente")))
+    }
+
+    /**
+     * UN TOUR de synchronisation : (1) regarde si l'AUTRE appareil a publié depuis (appel léger) ; si oui, télécharge, compare fiche par fiche et applique « le plus récent gagne » ;
+     * (2) si CE téléphone a changé depuis la dernière publication (ou vient de recevoir des changements), publie le résultat. Garde-fous : un seul tour à la fois ; pas de téléphone vide qui
+     * remplace une sauvegarde (garde-fou 1.65) ; copie de secours AVANT chaque application ; plan qui supprimerait plus de 3 fiches (ou plus d'un cinquième) NON appliqué sans confirmation ;
+     * au plus 8 publications par heure. `manuel` = déclenché par « Actualiser » (même chose, mais répond toujours). Ne lève jamais d'exception.
+     */
+    suspend fun synchroniser(c: Context, manuel: Boolean = false): Resultat {
+        if (!actif(c)) return Resultat(false, "La sauvegarde en ligne n'est pas activée")
+        if (!manuel && !synchroAutoActive(c)) return Resultat(true, "")
+        if (!verrouSynchro.tryLock()) return Resultat(true, if (manuel) "Une synchronisation est déjà en cours." else "")
+        try {
+            etatSynchro = "🔄 en cours…"
+            val cles = clesMemorisees(c)
+            val infos = existante(c, cles)
+            val vu = reglages(c).getString("sync_vu_maj", null)
+            val sigAvant = withContext(Dispatchers.IO) { signatureLocale(c) }
+            var aPublier = sigAvant != reglages(c).getString("sync_sig", null) || infos == null
+            var recu = ""
+            if (infos != null && infos.majLe != vu) {                                      // l'autre appareil a publié depuis notre dernière lecture (ou première synchronisation)
+                val (af, res) = apercuFusion(c)
+                if (af == null) { etatSynchro = "⚠ lecture impossible"; return Resultat(false, res.message) }
+                if (!af.plan.vide) {
+                    if (!FusionAppareils.planSur(af.plan, af.nbIci)) {
+                        etatSynchro = "⚠ confirmation requise"
+                        return Resultat(false, "La synchronisation automatique demande votre confirmation (${af.plan.suppressions} suppression(s) à appliquer). Ouvrez Sauvegarde en ligne → « Fusionner avec l'autre appareil » et lisez le détail.")
+                    }
+                    val b = appliquerFusion(c, af)
+                    recu = "${b.ajoutes} ajout(s), ${b.modifies} modification(s), ${b.supprimes} suppression(s)"
+                    aPublier = true
+                }
+                reglages(c).edit().putString("sync_vu_maj", infos.majLe).apply()
+            }
+            var envoye = false
+            if (aPublier) {
+                if (publicationsRecentes(c).size >= PUBLICATIONS_MAX_PAR_HEURE) { etatSynchro = "⏸ pause (limite d'envois)"; return Resultat(true, if (manuel) "Limite d'envois atteinte (8 par heure) : reprise automatique plus tard." else "", recu = recu) }
+                val r = envoyer(c, cles, forcer = true)
+                if (!r.ok) { etatSynchro = "⚠ envoi impossible"; return Resultat(false, "Synchronisation : envoi impossible (${r.message})", recu = recu) }
+                noterPublication(c); envoye = true
+                reglages(c).edit().putString("sync_vu_maj", existante(c, cles)?.majLe ?: "").putString("sync_sig", withContext(Dispatchers.IO) { signatureLocale(c) }).apply()
+            }
+            etatSynchro = "✓ à jour " + java.text.SimpleDateFormat("HH:mm", java.util.Locale.FRANCE).format(java.util.Date())
+            val message = when { recu.isNotEmpty() && envoye -> "Synchronisation : reçu $recu ; résultat publié."; recu.isNotEmpty() -> "Synchronisation : reçu $recu."; envoye -> "Synchronisation : vos modifications sont publiées."
+                else -> "Synchronisation : tout est à jour." }
+            return Resultat(true, message, recu = recu)
+        } catch (e: Exception) {
+            etatSynchro = "⚠ hors connexion"
+            return Resultat(false, "Synchronisation impossible : ${e.message ?: e.javaClass.simpleName}")
+        } finally { verrouSynchro.unlock() }
+    }
 
     /** Empreinte courte du casier de CET appareil (non secrète) : à comparer entre les deux appareils. */
     fun empreinteCasier(c: Context): String? = Base.secrets(c).getString("sauv_id", null)?.take(6)
