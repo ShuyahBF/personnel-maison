@@ -55,6 +55,7 @@ fun EcranSauvegarde(retour: () -> Unit) = Page("Sauvegarde en ligne", retour) {
     val aMigrer = SauvegardeEnLigne.aMigrer(c)
     var autre by remember { mutableStateOf<Pair<String, SauvegardeEnLigne.Existante>?>(null) }   // « activer » | « sauvegarder » + sauvegarde d'un AUTRE appareil trouvée dans le casier
     var confirmation by remember { mutableStateOf("") }
+    var fusion by remember { mutableStateOf<SauvegardeEnLigne.ApercuFusion?>(null) }       // ce que la fusion ferait, en attente de confirmation (1.67)
     var changer by remember { mutableStateOf(false) }                                      // fenêtre « Changer mon e-mail ou téléphone » (1.66)
     var nouvelId by remember { mutableStateOf("") }
     var occupe by remember { mutableStateOf(false) }
@@ -164,6 +165,10 @@ fun EcranSauvegarde(retour: () -> Unit) = Page("Sauvegarde en ligne", retour) {
             }
         }
         GrosBouton(Icons.Filled.CloudUpload, "Sauvegarder maintenant", Vert, actif = !occupe) { lancer("Sauvegarde en cours…", { SauvegardeEnLigne.sauvegarder(c) }) }
+        // 1.67 : fusion fiche par fiche avec l'autre appareil (« le plus récent gagne »), aperçu avant confirmation, copie de secours automatique
+        GrosBouton(Icons.Filled.Sync, "Fusionner avec l'autre appareil", Vert, actif = !occupe, sousTexte = "Le plus récent gagne, fiche par fiche : rien n'est perdu") {
+            lancer("Lecture de la sauvegarde en ligne et comparaison en cours…", { val (a, r) = SauvegardeEnLigne.apercuFusion(c); fusion = a; r })
+        }
         GrosBouton(Icons.Filled.CloudDownload, "Restaurer la dernière sauvegarde", Bleu, actif = !occupe) { confirmer = "restaurer"; phrase = "" }
         GrosBouton(Icons.Filled.History, "Restaurer la version précédente", Bleu, actif = !occupe, sousTexte = "Si la dernière sauvegarde est abîmée") { confirmer = "precedente"; phrase = "" }
         GrosBouton(Icons.Filled.Edit, "Changer mon e-mail ou téléphone", Orange, actif = !occupe, sousTexte = "La phrase secrète est redemandée") { changer = true; nouvelId = ""; phrase = "" }
@@ -233,6 +238,17 @@ fun EcranSauvegarde(retour: () -> Unit) = Page("Sauvegarde en ligne", retour) {
             } },
             dismissButton = { Tuile(Icons.Filled.Close, "Annuler", Orange) { copie = null; octetsLus = null } })
     }
+
+    // FUSION (1.67) : ce qui va changer, montré AVANT de confirmer
+    fusion?.let { f -> AlertDialog(onDismissRequest = { fusion = null }, title = { Text("Fusionner avec l'autre appareil") },
+        text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(f.plan.resume(), fontSize = 16.sp, color = if (f.plan.vide) Vert else BleuNuit)
+            if (!f.plan.vide) Text("Pour chaque fiche, la version la plus récente l'emporte ; une fiche supprimée d'un côté est supprimée de l'autre sauf si elle a été modifiée après. Vos données actuelles sont mises de côté (rétablissables) avant la fusion, puis le résultat est publié en ligne pour l'autre appareil. Les pièces jointes (photos de pièces) ne sont pas fusionnées.", fontSize = 14.sp, color = Gris)
+        } },
+        confirmButton = { Tuile(Icons.Filled.Sync, if (f.plan.vide) "Publier" else "Fusionner", Vert, actif = !occupe) { fusion = null
+            lancer("Fusion en cours (copie de secours, application, publication)…", { SauvegardeEnLigne.fusionner(c, f) })
+        } },
+        dismissButton = { Tuile(Icons.Filled.Close, "Annuler", Orange) { fusion = null } }) }
 
     // CHANGER L'IDENTIFIANT (1.66) : la phrase est redemandée et vérifiée ; avertissement clair avant de continuer
     if (changer) AlertDialog(onDismissRequest = { changer = false }, title = { Text("Changer mon e-mail ou téléphone") },

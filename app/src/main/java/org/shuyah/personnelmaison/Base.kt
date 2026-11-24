@@ -561,6 +561,21 @@ object Base {
         } finally { dossier.deleteRecursively() }
     }
 
+    /** Exécute un bloc sur NOTRE base ouverte (lecture et écriture, 1.67 : fusion de deux appareils). */
+    fun <T> avecBase(c: Context, bloc: (androidx.sqlite.db.SupportSQLiteDatabase) -> T): T = synchronized(this) { dao(c); bloc(instance!!.openHelper.writableDatabase) }
+
+    /** Ouvre une COPIE de la base (octets du fichier + journal WAL, clé donnée) à part, le temps d'un bloc, puis la referme et efface la copie (1.67 : lire la base de l'autre appareil). */
+    fun <T> avecCopie(c: Context, principal: ByteArray, wal: ByteArray?, cle: String, bloc: (SQLiteDatabase) -> T): T {
+        SQLiteDatabase.loadLibs(c)
+        val dossier = File(c.cacheDir, "fusion_" + System.nanoTime()).also { it.mkdirs() }
+        try {
+            val f = File(dossier, NOM_FICHIER); f.writeBytes(principal)
+            if (wal != null) File(dossier, "$NOM_FICHIER-wal").writeBytes(wal)
+            val db = SQLiteDatabase.openDatabase(f.path, SQLiteDatabase.getBytes(cle.toCharArray()), null, SQLiteDatabase.OPEN_READWRITE, null, null)
+            try { return bloc(db) } finally { db.close() }
+        } finally { dossier.deleteRecursively() }
+    }
+
     /** Ferme la base (avant de remplacer son fichier lors d'une restauration) ; elle sera rouverte au prochain accès. */
     fun fermer() = synchronized(this) { instance?.close(); instance = null }
 
