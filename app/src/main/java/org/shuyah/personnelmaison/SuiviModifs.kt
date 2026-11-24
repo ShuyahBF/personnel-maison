@@ -33,16 +33,24 @@ object SuiviModifs {
         add("CREATE UNIQUE INDEX IF NOT EXISTS `index_suivi_fiches_uid` ON `suivi_fiches` (`uid`)")
         add("CREATE TABLE IF NOT EXISTS `suivi_suppressions` (`t` TEXT NOT NULL, `uid` TEXT NOT NULL, `maj` INTEGER NOT NULL, PRIMARY KEY(`t`, `uid`))")
         for ((t, creation) in TABLES) {
-            // Après AJOUT : la fiche reçoit son identifiant unique et sa date
+            // IMPORTANT (1.75) : SQLite fait PRIMER la stratégie de conflit de l'instruction qui déclenche (Room écrit « INSERT OR ABORT » / « UPDATE OR ABORT ») sur celle écrite dans le
+            // déclencheur : un « INSERT OR REPLACE / OR IGNORE » du déclencheur devenait donc « OR ABORT » et l'enregistrement d'une opération échouait (« UNIQUE constraint failed:
+            // suivi_fiches »). Les déclencheurs n'utilisent plus AUCUNE clause de conflit : ils effacent d'abord, puis insèrent seulement si la ligne n'existe pas.
+            add("DROP TRIGGER IF EXISTS `suivi_ai_$t`")
+            add("DROP TRIGGER IF EXISTS `suivi_au_$t`")
+            add("DROP TRIGGER IF EXISTS `suivi_ad_$t`")
+            // Après AJOUT : la fiche reçoit son identifiant unique et sa date (une ancienne ligne de suivi portant le même numéro est d'abord retirée)
             add("CREATE TRIGGER IF NOT EXISTS `suivi_ai_$t` AFTER INSERT ON `$t` BEGIN " +
-                "INSERT OR REPLACE INTO `suivi_fiches` (`t`, `id`, `uid`, `maj`) VALUES ('$t', NEW.`id`, $UID, $MAINTENANT); END")
+                "DELETE FROM `suivi_fiches` WHERE `t` = '$t' AND `id` = NEW.`id`; " +
+                "INSERT INTO `suivi_fiches` (`t`, `id`, `uid`, `maj`) VALUES ('$t', NEW.`id`, $UID, $MAINTENANT); END")
             // Après MODIFICATION : la date est renouvelée (la fiche est créée dans le suivi si elle n'y était pas)
             add("CREATE TRIGGER IF NOT EXISTS `suivi_au_$t` AFTER UPDATE ON `$t` BEGIN " +
-                "INSERT OR IGNORE INTO `suivi_fiches` (`t`, `id`, `uid`, `maj`) VALUES ('$t', NEW.`id`, $UID, $MAINTENANT); " +
-                "UPDATE `suivi_fiches` SET `maj` = $MAINTENANT WHERE `t` = '$t' AND `id` = NEW.`id`; END")
+                "UPDATE `suivi_fiches` SET `maj` = $MAINTENANT WHERE `t` = '$t' AND `id` = NEW.`id`; " +
+                "INSERT INTO `suivi_fiches` (`t`, `id`, `uid`, `maj`) SELECT '$t', NEW.`id`, $UID, $MAINTENANT WHERE NOT EXISTS (SELECT 1 FROM `suivi_fiches` WHERE `t` = '$t' AND `id` = NEW.`id`); END")
             // Après SUPPRESSION : pierre tombale (identifiant unique + date) puis la fiche quitte le suivi
             add("CREATE TRIGGER IF NOT EXISTS `suivi_ad_$t` AFTER DELETE ON `$t` BEGIN " +
-                "INSERT OR REPLACE INTO `suivi_suppressions` (`t`, `uid`, `maj`) SELECT `t`, `uid`, $MAINTENANT FROM `suivi_fiches` WHERE `t` = '$t' AND `id` = OLD.`id`; " +
+                "DELETE FROM `suivi_suppressions` WHERE `t` = '$t' AND `uid` IN (SELECT `uid` FROM `suivi_fiches` WHERE `t` = '$t' AND `id` = OLD.`id`); " +
+                "INSERT INTO `suivi_suppressions` (`t`, `uid`, `maj`) SELECT `t`, `uid`, $MAINTENANT FROM `suivi_fiches` WHERE `t` = '$t' AND `id` = OLD.`id`; " +
                 "DELETE FROM `suivi_fiches` WHERE `t` = '$t' AND `id` = OLD.`id`; END")
             // Rattrapage : les fiches déjà présentes reçoivent un identifiant (date = création si connue)
             add("INSERT OR IGNORE INTO `suivi_fiches` (`t`, `id`, `uid`, `maj`) SELECT '$t', `id`, $UID, " +
