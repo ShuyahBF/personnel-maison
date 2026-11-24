@@ -136,6 +136,10 @@ fun EcranSauvegarde(retour: () -> Unit) = Page("Sauvegarde en ligne", retour) {
     SauvegardeEnLigne.alerteAutreAppareil(c)?.let { Carte("Un autre appareil a sauvegardé", Icons.Filled.Warning) {
         Text("Une sauvegarde faite depuis un AUTRE appareil date du ${it.take(16).replace('T', ' ')}. Votre sauvegarde automatique est suspendue pour ne rien écraser. Touchez « Restaurer la dernière sauvegarde » : un tableau compare les deux avant tout remplacement. Pour garder CE téléphone et remplacer la sauvegarde en ligne, utilisez « Sauvegarder maintenant » puis « Remplacer ».", fontSize = 15.sp, color = Rouge)
     } }
+    // 1.63 : « je suis déjà à jour » : l'alerte tombe jusqu'à la prochaine sauvegarde d'un autre appareil (la règle compare maintenant la DATE de la sauvegarde connue)
+    if (SauvegardeEnLigne.alerteAutreAppareil(c) != null) GrosBouton(Icons.Filled.CheckCircle, "Je suis déjà à jour (ignorer l'alerte)", Gris, actif = !occupe) {
+        SauvegardeEnLigne.ignorerAlerte(c); message = "Alerte ignorée jusqu'à la prochaine sauvegarde d'un autre appareil"; annoncer(c, message!!, true)
+    }
     if (cloud) {
         Carte("Sauvegarde en ligne activée", Icons.Filled.CloudDone) {
             Ligne("Dernière sauvegarde", dateLisible(dernier))
