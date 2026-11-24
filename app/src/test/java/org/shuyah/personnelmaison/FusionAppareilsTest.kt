@@ -83,3 +83,19 @@ class FusionAppareilsTest {
         assertTrue(r.contains("1 personne(s)") && r.contains("1 pointage(s)") && r.contains("ajouté(s)"))
     }
 }
+
+/** 1.68 : cas du terrain (« aucune différence » à tort) : mêmes identifiant et date mais contenus différents, adoptions comptées. */
+class FusionAppareilsDiagnosticTest {
+    private fun perso(uid: String, nom: String, maj: Long) = FusionAppareils.Fiche("personnels", uid, maj, mapOf("nom" to nom, "societeId" to null, "pieceChemin" to null))
+    @Test fun memeDateMemeIdentifiantContenuDifferentEstTranche() {
+        val a = FusionAppareilsTest.Appareil(listOf(perso("p1", "A", 10))); val b = FusionAppareilsTest.Appareil(listOf(perso("p1", "B", 10)))
+        assertTrue(!a.fusionnerAvec(b).vide || !b.fusionnerAvec(a).vide)                    // l'un des deux sens agit : plus de « aucune différence » à tort
+        a.fusionnerAvec(b); b.fusionnerAvec(a); a.fusionnerAvec(b)
+        assertEquals(a.contenu(), b.contenu())                                              // et les deux convergent
+    }
+    @Test fun unRapprochementNEstPasUnePlanVide() {
+        val pt = { uid: String -> FusionAppareils.Fiche("pointages", uid, 5, mapOf("personnelId" to "p", "date" to "2026-11-24", "depart" to 1)) }
+        val plan = FusionAppareils.calculer(FusionAppareils.Instantane(listOf(pt("b")), emptyList()), FusionAppareils.Instantane(listOf(pt("a")), emptyList()))
+        assertTrue(!plan.vide); assertTrue(plan.resume().contains("rapprochée"))
+    }
+}

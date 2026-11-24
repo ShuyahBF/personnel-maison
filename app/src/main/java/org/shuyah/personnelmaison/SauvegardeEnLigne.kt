@@ -409,7 +409,12 @@ object SauvegardeEnLigne {
 
     // ---------------------------------------------------------------- FUSION AVEC L'AUTRE APPAREIL (1.67, lot 2 de la refonte : « le plus récent gagne », fiche par fiche)
     /** Ce que la fusion ferait, montré AVANT de confirmer. */
-    class ApercuFusion(val plan: FusionAppareils.Plan, val cles: SauvegardeCrypto.Cles, val appareil: String?, val majLe: String)
+    class ApercuFusion(val plan: FusionAppareils.Plan, val cles: SauvegardeCrypto.Cles, val appareil: String?, val majLe: String, val nbIci: Int = 0, val nbEnLigne: Int = 0) {
+        /** La sauvegarde en ligne comparée a été faite par CET appareil : l'autre appareil n'utilise donc PAS ce casier (identifiant ou phrase différents). */
+        fun faiteParCetAppareil(c: Context) = appareil != null && appareil == monAppareil(c)
+        /** Empreinte courte du casier (6 premiers caractères, non secrète) : identique sur deux appareils qui partagent le même casier. */
+        val empreinte get() = cles.id.take(6)
+    }
 
     /**
      * Télécharge la sauvegarde en ligne (clés mémorisées), ouvre sa base À PART, la compare fiche par fiche avec la nôtre et calcule le plan, SANS rien modifier.
@@ -424,6 +429,7 @@ object SauvegardeEnLigne {
         val octets = withContext(Dispatchers.IO) { appel(c, cles, "GET").use { r -> if (!r.isSuccessful) throw Erreur(messageServeur(r, "Téléchargement impossible")); r.body!!.bytes() } }
         val (ap, res) = analyser(c, octets, cles, identifiant(c) ?: "", infos.appareil, ancienne = false, fichier = false, majLe = infos.majLe)
         if (ap == null) throw Erreur(res.message)
+        var nbIci = 0; var nbPair = 0
         val plan = withContext(Dispatchers.IO) {
             val pair = Base.avecCopie(c, ap.entrees["base/${Base.NOM_FICHIER}"]!!, ap.entrees["base/${Base.NOM_FICHIER}-wal"], String(ap.entrees["secrets/cle_base"]!!)) { db ->
                 val r = DepotFusion.Requeteur { sql, args -> DepotFusion.depuisCurseur(db.rawQuery(sql, args)) }
@@ -431,9 +437,10 @@ object SauvegardeEnLigne {
                 DepotFusion.lire(r)
             }
             val local = Base.avecBase(c) { DepotFusion.lire(DepotFusion.requeteurRoom(it)) }
+            nbIci = local.fiches.size; nbPair = pair.fiches.size
             FusionAppareils.calculer(local, pair)
         }
-        Pair(ApercuFusion(plan, cles, infos.appareil, infos.majLe), Resultat(true, plan.resume()))
+        Pair(ApercuFusion(plan, cles, infos.appareil, infos.majLe, nbIci, nbPair), Resultat(true, plan.resume()))
     } catch (e: Erreur) { Pair(null, Resultat(false, e.message ?: "Comparaison impossible")) } catch (e: Exception) { Pair(null, Resultat(false, "Comparaison impossible : ${e.message ?: e.javaClass.simpleName}")) }
 
     /**
@@ -455,6 +462,21 @@ object SauvegardeEnLigne {
         Resultat(envoi.ok, "Fusion faite : ${bilan.ajoutes} ajout(s), ${bilan.modifies} modification(s), ${bilan.supprimes} suppression(s).$ign " +
             if (envoi.ok) "Le résultat est publié en ligne. Une copie de secours de vos données d'avant est gardée (rétablissable)." else "Mais la publication en ligne a échoué : ${envoi.message}")
     } catch (e: Erreur) { Resultat(false, e.message ?: "Fusion impossible") } catch (e: Exception) { Resultat(false, "Fusion impossible : ${e.message ?: e.javaClass.simpleName}") }
+
+    /** Empreinte courte du casier de CET appareil (non secrète) : à comparer entre les deux appareils. */
+    fun empreinteCasier(c: Context): String? = Base.secrets(c).getString("sauv_id", null)?.take(6)
+
+    /**
+     * SE RELIER AU CASIER DE L'AUTRE APPAREIL (1.68) : on saisit le même e-mail ou téléphone ET la même phrase que sur l'autre appareil ; si une sauvegarde existe sous cet identifiant, CE téléphone
+     * adopte ses clés. AUCUNE donnée n'est envoyée ni remplacée : ensuite « Fusionner avec l'autre appareil » compare et fusionne les deux.
+     */
+    suspend fun relierAuCasier(c: Context, phrase: String, identifiant: String): Resultat = try {
+        val cles = withContext(Dispatchers.Default) { SauvegardeCrypto.deriver(phrase, identifiant) }
+        val e = existante(c, cles) ?: throw Erreur("Aucune sauvegarde sous cet e-mail ou téléphone et cette phrase. Vérifiez l'orthographe (même e-mail, même phrase que sur l'autre appareil).")
+        retenir(c, cles, identifiant)
+        poserAlerte(c, e)
+        Resultat(true, "Ce téléphone utilise maintenant le casier de l'autre appareil (empreinte ${cles.id.take(6)}). Faites « Fusionner avec l'autre appareil ».")
+    } catch (e: Erreur) { Resultat(false, e.message ?: "Liaison impossible") } catch (e: Exception) { Resultat(false, "Liaison impossible : ${e.message ?: e.javaClass.simpleName}") }
 
     /** Fichier (chiffré par le téléphone) où est gardée la copie de secours d'AVANT la dernière restauration. */
     private fun fichierSecours(c: Context) = File(File(c.filesDir, "avant_restauration").also { it.mkdirs() }, "donnees.enc")

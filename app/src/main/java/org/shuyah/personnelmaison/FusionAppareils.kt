@@ -31,7 +31,8 @@ object FusionAppareils {
         val ajouts get() = operations.count { it is Operation.Inserer }
         val modifications get() = operations.count { it is Operation.Mettre }
         val suppressions get() = operations.count { it is Operation.Supprimer }
-        val vide get() = ajouts == 0 && modifications == 0 && suppressions == 0
+        val rapprochements get() = operations.count { it is Operation.AdopterUid }
+        val vide get() = ajouts == 0 && modifications == 0 && suppressions == 0 && rapprochements == 0
         /** Détail par table : « 3 pointages ajoutés, 1 paiement modifié… » (libellés lisibles). */
         fun resume(): String {
             val l = mutableListOf<String>()
@@ -42,6 +43,7 @@ object FusionAppareils {
             compter("ajouté(s)") { (it as? Operation.Inserer)?.fiche?.table }
             compter("modifié(s)") { (it as? Operation.Mettre)?.fiche?.table }
             compter("supprimé(s)") { (it as? Operation.Supprimer)?.table }
+            if (rapprochements > 0) l.add("$rapprochements fiche(s) identique(s) rapprochée(s)")
             return if (l.isEmpty()) "Aucune différence : les deux appareils sont à jour." else l.joinToString(" ; ")
         }
     }
@@ -120,6 +122,8 @@ object FusionAppareils {
     private fun plusRecent(autre: Fiche, ici: Fiche): Boolean {
         val champsIdentiques = autre.champs.filterKeys { k -> k !in (PROTEGEES[autre.table] ?: emptySet()) } == ici.champs.filterKeys { k -> k !in (PROTEGEES[ici.table] ?: emptySet()) }
         if (champsIdentiques) return false
-        return autre.maj > ici.maj || (autre.maj == ici.maj && autre.uid < ici.uid)
+        if (autre.maj != ici.maj) return autre.maj > ici.maj
+        // Même date mais contenu différent : on départage de façon STABLE (même résultat sur les deux appareils) : identifiant le plus petit, puis contenu le plus grand
+        return if (autre.uid != ici.uid) autre.uid < ici.uid else autre.champs.toString() > ici.champs.toString()
     }
 }
