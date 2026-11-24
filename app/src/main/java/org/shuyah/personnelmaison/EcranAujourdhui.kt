@@ -34,13 +34,19 @@ fun EcranAujourdhui(ouvrir: (Ecran) -> Unit, grosTexte: Boolean, surGrosTexte: (
     val actifs = personnels.filter { p -> try { !LocalDate.parse(p.dateDebut).isAfter(aujourdhui) && (p.dateFin == null || !LocalDate.parse(p.dateFin).isBefore(aujourdhui)) } catch (e: Exception) { true } }
 
     // Sauvegarde en ligne : automatique une fois par jour à l'ouverture (si activée) ; toujours annoncée (règle : jamais d'enregistrement silencieux)
+    var alerteAutre by remember { mutableStateOf(SauvegardeEnLigne.alerteAutreAppareil(c)) }
     LaunchedEffect(Unit) {
+        SauvegardeEnLigne.verifierAutreAppareil(c); alerteAutre = SauvegardeEnLigne.alerteAutreAppareil(c)   // 1.62 : un autre appareil a-t-il sauvegardé depuis ?
         SauvegardeEnLigne.sauvegardeAutomatique(c)?.let { android.widget.Toast.makeText(c.applicationContext, if (it.ok) "Sauvegarde automatique effectuée" else "Sauvegarde automatique impossible : ${it.message}", android.widget.Toast.LENGTH_LONG).show() }
     }
     Page("Pointage") {
         Text(Calculs.dateLongue(aujourdhui), fontSize = 20.sp, color = BleuNuit)
         GrosBouton(Icons.Filled.AccessTime, "Noter une arrivée ou un départ", Vert) { ouvrir(Ecran.Noter) }
         GrosBouton(Icons.Filled.EditNote, "Corriger un pointage", Bleu) { ouvrir(Ecran.Corrections) }
+        // 1.62 : une sauvegarde d'un AUTRE appareil existe dans ce casier : rien n'est écrasé, on invite à comparer puis choisir
+        alerteAutre?.let { Carte(modifier = Modifier.clickable { ouvrir(Ecran.Sauvegarde) }) {
+            Text("⚠ Un autre appareil a sauvegardé le ${it.take(16).replace('T', ' ')}. Rien n'a été écrasé : comparez les deux et choisissez (touchez ici).", fontSize = 15.sp, color = Rouge)
+        } }
         if (SauvegardeEnLigne.mode(c) == null) Carte(modifier = Modifier.clickable { ouvrir(Ecran.Sauvegarde) }) {
             Text("Protégez vos données : activez la sauvegarde en ligne (ou restaurez-la après une réinstallation).", fontSize = 15.sp, color = Vert)
         }

@@ -150,8 +150,8 @@ object SauvegardeEnLigne {
         // GARDE-FOU (1.60) : si une AUTRE installation a sauvegardé en dernier dans ce casier, on ne l'écrase JAMAIS en silence (sauvegarde automatique comprise) : l'écran propose de restaurer ou de remplacer.
         if (!forcer) {
             val e = existante(c, cles)
-            if (estAutreAppareil(c, e)) return Resultat(false, "Une sauvegarde faite depuis un AUTRE appareil (le ${e!!.majLe.take(16).replace('T', ' ')}) existe déjà pour cet identifiant et cette phrase. " +
-                "La remplacer ferait perdre ses données : restaurez-la d'abord, ou remplacez-la en connaissance de cause.", autreAppareil = e)
+            if (estAutreAppareil(c, e)) { poserAlerte(c, e!!); return Resultat(false, "Une sauvegarde faite depuis un AUTRE appareil (le ${e!!.majLe.take(16).replace('T', ' ')}) existe déjà pour cet identifiant et cette phrase. " +
+                "La remplacer ferait perdre ses données : restaurez-la d'abord, ou remplacez-la en connaissance de cause.", autreAppareil = e) }
         }
         val (entrees, comptes) = instantane(c)
         val pieces = entrees.keys.count { it.startsWith("pieces/") }
@@ -160,7 +160,7 @@ object SauvegardeEnLigne {
         return withContext(Dispatchers.IO) {
             appel(c, cles, "PUT", corps = chiffre).use { r ->
                 if (!r.isSuccessful) Resultat(false, messageServeur(r, "Envoi refusé"))
-                else { reglages(c).edit().putLong("sauv_dernier", System.currentTimeMillis()).putString("sauv_connu", monAppareil(c)).apply(); Resultat(true, "Sauvegarde terminée et VÉRIFIÉE : ${resumer(comptes, pieces)} (${chiffre.size / 1024} Ko, chiffrée)") }
+                else { effacerAlerte(c); reglages(c).edit().putLong("sauv_dernier", System.currentTimeMillis()).putString("sauv_connu", monAppareil(c)).apply(); Resultat(true, "Sauvegarde terminée et VÉRIFIÉE : ${resumer(comptes, pieces)} (${chiffre.size / 1024} Ko, chiffrée)") }
             }
         }
     }
@@ -197,6 +197,43 @@ object SauvegardeEnLigne {
         oublier(c); reglages(c).edit().putString("sauv_mode", "local").apply()
         Resultat(true, "Sauvegarde en ligne effacée et désactivée")
     } catch (e: Erreur) { Resultat(false, e.message ?: "Désactivation impossible") }
+
+    // ---------------------------------------------------------------- COMPARAISON ET ALERTE « AUTRE APPAREIL » (1.62, demande du propriétaire : deux appareils, aucune donnée écrasée par l'autre)
+    /** Une ligne du tableau de comparaison : ce que contient la sauvegarde en ligne et ce que contient CE téléphone pour une même rubrique. */
+    data class LigneComparaison(val libelle: String, val sauvegarde: Long, val telephone: Long) {
+        val identique get() = sauvegarde == telephone
+        /** Éléments présents seulement sur ce téléphone : ils seraient mis de côté (rétablissables) par une restauration. */
+        val enPlusSurTelephone get() = (telephone - sauvegarde).coerceAtLeast(0)
+        /** Éléments présents seulement dans la sauvegarde (faits sur un autre appareil, par exemple). */
+        val enPlusEnLigne get() = (sauvegarde - telephone).coerceAtLeast(0)
+    }
+    /** Compare rubrique par rubrique (seules les rubriques non vides d'un côté au moins sont listées). Fonction pure, testée. */
+    fun comparer(sauvegarde: Map<String, Long>, telephone: Map<String, Long>): List<LigneComparaison> =
+        LIBELLES.mapNotNull { (cle, nom) ->
+            val a = sauvegarde[cle] ?: 0L; val b = telephone[cle] ?: 0L
+            if (a == 0L && b == 0L) null else LigneComparaison(nom.replaceFirstChar { it.uppercase() }, a, b)
+        }
+    /** Total des éléments qui n'existent QUE sur ce téléphone : s'il est > 0, restaurer ferait « perdre » (mettre de côté) ces ajouts. */
+    fun ajoutsLocaux(lignes: List<LigneComparaison>): Long = lignes.sumOf { it.enPlusSurTelephone }
+
+    /** Alerte mémorisée : date de la sauvegarde faite par un AUTRE appareil et pas encore traitée (restaurée ou remplacée en connaissance de cause). */
+    fun alerteAutreAppareil(c: Context): String? = reglages(c).getString("sauv_alerte_autre", null)
+    private fun poserAlerte(c: Context, e: Existante) = reglages(c).edit().putString("sauv_alerte_autre", e.majLe).apply()
+    private fun effacerAlerte(c: Context) = reglages(c).edit().remove("sauv_alerte_autre").apply()
+
+    /**
+     * À CHAQUE ouverture : regarde (sans rien télécharger) si un autre appareil a sauvegardé dans ce casier depuis. Si oui, l'alerte est posée : l'écran d'accueil et l'écran de sauvegarde
+     * la montrent, pour que la personne compare puis choisisse. Aucun envoi, aucun remplacement. Silencieuse en cas de réseau absent.
+     */
+    suspend fun verifierAutreAppareil(c: Context) {
+        try {
+            if (!actif(c)) return
+            val s = Base.secrets(c)
+            val cles = SauvegardeCrypto.Cles(s.getString("sauv_id", null) ?: return, s.getString("sauv_jeton", null) ?: return, ByteArray(32))
+            val e = existante(c, cles)
+            if (estAutreAppareil(c, e)) poserAlerte(c, e!!) else effacerAlerte(c)
+        } catch (e: Exception) { /* hors connexion : on reverra à la prochaine ouverture */ }
+    }
 
     /** Sauvegarde automatique : une fois par jour à l'ouverture, en mode « cloud ». Rend null si rien n'était à faire. */
     suspend fun sauvegardeAutomatique(c: Context): Resultat? =
@@ -316,7 +353,7 @@ object SauvegardeEnLigne {
             // Restauration EN LIGNE : la sauvegarde reste active avec les mêmes clés. Restauration depuis un FICHIER avec identifiant : la sauvegarde en ligne est activée avec ces clés et la
             // première sauvegarde part à la prochaine ouverture (« sauv_dernier » = 0) ; depuis un fichier ancien (phrase seule), on n'active rien de nouveau.
             if (!(a.fichier && a.ancienne)) retenir(c, a.cles, a.identifiant.ifBlank { null })
-            retenirConnu(c, a.appareil)                                                  // l'installation dont je viens de restaurer la sauvegarde n'est plus une « autre » installation
+            effacerAlerte(c); retenirConnu(c, a.appareil)                                                  // l'installation dont je viens de restaurer la sauvegarde n'est plus une « autre » installation
             reglages(c).edit().putLong("sauv_dernier", if (a.fichier) 0L else System.currentTimeMillis()).apply()
         }
         Resultat(true, "Données restaurées : ${resumer(a.sauvegarde, a.pieces)}" + if (a.ancienne) ". Cette sauvegarde date d'avant l'identifiant : pour la protéger d'une phrase identique chez quelqu'un d'autre, désactivez la sauvegarde puis réactivez-la avec votre e-mail ou téléphone." else "")
