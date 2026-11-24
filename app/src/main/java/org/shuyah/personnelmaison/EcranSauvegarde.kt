@@ -92,6 +92,14 @@ fun EcranSauvegarde(retour: () -> Unit) = Page("Sauvegarde en ligne", retour) {
         }
     }
 
+    // 1.65 : « Enregistrer une copie chiffrée » en UN geste quand la configuration est connue (sauvegarde en ligne active, ou e-mail + phrase déjà saisis une fois) ; sinon la fenêtre de saisie
+    fun demanderCopie() {
+        if (occupe) return
+        if (SauvegardeEnLigne.copieConfiguree(c))
+            lancer("Préparation de la copie (vérification des données)…", { val (o, r) = SauvegardeEnLigne.preparerCopieMemorisee(c); octetsCopie = o; r }) { r -> if (r.ok) creerFichier.launch(SauvegardeEnLigne.nomCopieLocale()) }
+        else { copie = "creer"; phrase = ""; confirmation = "" }
+    }
+
     Carte("Pourquoi sauvegarder ?", Icons.Filled.CloudUpload) {
         Text("Toutes vos données (personnel, pointages, portefeuille, pièces, réglages) sont copiées EN LIGNE, chiffrées sur ce téléphone avec votre phrase secrète. " +
             "Après une désinstallation, un changement de téléphone ou de version, il suffit de retaper la phrase pour tout retrouver. Le serveur ne peut rien lire.", fontSize = 15.sp, color = BleuNuit)
@@ -110,7 +118,7 @@ fun EcranSauvegarde(retour: () -> Unit) = Page("Sauvegarde en ligne", retour) {
                 Text("  2. Votre e-mail ou téléphone et votre phrase", fontSize = 16.sp, color = BleuNuit)
             }
         }
-        if (!copieFaite) GrosBouton(Icons.Filled.SaveAlt, "1. Faire la copie de sécurité", Orange, actif = !occupe) { copie = "creer"; phrase = ""; confirmation = "" }
+        if (!copieFaite) GrosBouton(Icons.Filled.SaveAlt, "1. Faire la copie de sécurité", Orange, actif = !occupe) { demanderCopie() }
         else {
             Carte { OutlinedTextField(value = identifiant, onValueChange = { identifiant = it }, label = { Text("Votre e-mail ou numéro de téléphone") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
                 supportingText = { Text("Avec l'indicatif pour un numéro (ex. +226 70 00 00 00).") })
@@ -129,7 +137,11 @@ fun EcranSauvegarde(retour: () -> Unit) = Page("Sauvegarde en ligne", retour) {
         Text("Enregistre TOUTES vos données dans un fichier chiffré (votre e-mail ou téléphone + votre phrase), à l'endroit que vous choisissez (Documents, carte SD…). Il reste sur le téléphone même si l'application est désinstallée, et se restaure ensuite, sans connexion.", fontSize = 15.sp, color = BleuNuit)
         if (SauvegardeEnLigne.derniereCopieLocale(c) > 0) Ligne("Dernière copie", dateLisible(SauvegardeEnLigne.derniereCopieLocale(c)))
     }
-    GrosBouton(Icons.Filled.SaveAlt, "Enregistrer une copie chiffrée", Orange, actif = !occupe) { copie = "creer"; phrase = ""; confirmation = "" }
+    GrosBouton(Icons.Filled.SaveAlt, "Enregistrer une copie chiffrée", Orange, actif = !occupe,
+        sousTexte = if (SauvegardeEnLigne.copieConfiguree(c)) "Sans rien saisir : votre configuration est mémorisée" else "Première fois : e-mail ou téléphone, phrase et confirmation") { demanderCopie() }
+    if (!cloud && SauvegardeEnLigne.copieConfiguree(c)) GrosBouton(Icons.Filled.Delete, "Oublier la configuration de la copie", Gris, actif = !occupe) {
+        SauvegardeEnLigne.oublierConfigurationCopie(c); message = "Configuration de la copie oubliée : la prochaine copie redemandera l'e-mail ou le téléphone et la phrase."; annoncer(c, message!!, true)
+    }
     GrosBouton(Icons.Filled.FolderOpen, "Restaurer depuis un fichier", Bleu, actif = !occupe) { phrase = ""; ouvrirFichier.launch(arrayOf("*/*")) }
 
     // 1.62 : alerte « autre appareil » (posée à l'ouverture ou à une sauvegarde refusée)

@@ -158,6 +158,9 @@ object SauvegardeEnLigne {
                 "La remplacer ferait perdre ses données : restaurez-la d'abord, ou remplacez-la en connaissance de cause.", autreAppareil = e) }
         }
         val (entrees, comptes) = instantane(c)
+        // GARDE-FOU (1.65) : un téléphone VIDE (neuf, ou réinstallé) ne remplace JAMAIS une sauvegarde qui contient des données, même avec « Remplacer » : il faut d'abord la restaurer.
+        if (total(comptes) == 0L && existante(c, cles) != null && enLigneContientDesDonnees(c, cles))
+            return Resultat(false, "Envoi REFUSÉ : ce téléphone est VIDE alors que la sauvegarde en ligne contient des données. L'envoyer les ferait perdre. Restaurez d'abord la sauvegarde (Restaurer la dernière sauvegarde).")
         val pieces = entrees.keys.count { it.startsWith("pieces/") }
         val chiffre = withContext(Dispatchers.IO) { SauvegardeCrypto.chiffrer(cles.chiffre, SauvegardeCrypto.archiver(entrees)) }
         if (chiffre.size > TAILLE_MAX) return Resultat(false, "Sauvegarde trop volumineuse (${chiffre.size / (1024 * 1024)} Mo, 55 Mo au plus) : supprimez des pièces volumineuses")
@@ -168,6 +171,13 @@ object SauvegardeEnLigne {
             }
         }
     }
+
+    /** Télécharge et ouvre la sauvegarde en ligne pour savoir si elle contient des données. En cas de doute (illisible), rend VRAI : on préfère refuser l'envoi que perdre des données. */
+    private suspend fun enLigneContientDesDonnees(c: Context, cles: SauvegardeCrypto.Cles): Boolean = try {
+        val chiffre = withContext(Dispatchers.IO) { appel(c, cles, "GET").use { r -> if (!r.isSuccessful) throw Erreur("lecture impossible"); r.body!!.bytes() } }
+        val (ap, _) = analyser(c, chiffre, cles, "", null, false, fichier = false)
+        ap == null || !ap.vide
+    } catch (e: Exception) { true }
 
     /**
      * Active la sauvegarde en ligne avec cet IDENTIFIANT (e-mail ou téléphone) et cette phrase : retient les clés (chiffrées) et envoie la première sauvegarde.
@@ -295,11 +305,35 @@ object SauvegardeEnLigne {
     /** Une copie de sécurité a-t-elle été enregistrée ces dernières 24 heures ? (condition pour passer à l'identifiant) */
     fun copieLocaleRecente(c: Context) = System.currentTimeMillis() - derniereCopieLocale(c) < INTERVALLE_AUTO_MS
 
-    /** Photographie VÉRIFIÉE de toutes les données (même contrôle que la sauvegarde en ligne), chiffrée avec identifiant + phrase : octets du fichier à enregistrer. */
+    // CONFIGURATION MÉMORISÉE (1.65, demande du propriétaire : « saisir une fois, la configuration conserve l'e-mail et la phrase ») : on garde la CLÉ DÉRIVÉE (jamais la phrase elle-même),
+    // dans les préférences chiffrées par le Keystore, comme celles de la sauvegarde en ligne. Un téléphone neuf doit toujours retaper e-mail + phrase pour LIRE une copie.
+    private fun hex(b: ByteArray) = b.joinToString("") { "%02x".format(it) }
+    private fun deHex(t: String) = t.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+    /** Clé et mode (1 = phrase seule d'avant la 1.60, 2 = identifiant + phrase) à utiliser pour une copie sans rien redemander ; null si rien n'est configuré. */
+    private fun cleCopie(c: Context): Pair<ByteArray, Byte>? {
+        val s = Base.secrets(c)
+        if (actif(c)) s.getString("sauv_chiffre", null)?.let { return Pair(deHex(it), if (identifiant(c) == null) 1.toByte() else 2.toByte()) }
+        return s.getString("copie_chiffre", null)?.let { Pair(deHex(it), 2.toByte()) }
+    }
+    /** Vrai si la copie chiffrée peut se faire en un geste (sauvegarde en ligne active, ou configuration déjà saisie une fois). */
+    fun copieConfiguree(c: Context): Boolean = cleCopie(c) != null
+    /** Oublie la configuration saisie pour la copie (la sauvegarde en ligne, elle, garde ses propres clés). */
+    fun oublierConfigurationCopie(c: Context) { Base.secrets(c).edit().remove("copie_chiffre").apply() }
+
+    /** Copie chiffrée avec la configuration mémorisée : aucune saisie. */
+    suspend fun preparerCopieMemorisee(c: Context): Pair<ByteArray?, Resultat> = try {
+        val (cle, mode) = cleCopie(c) ?: throw Erreur("Aucune configuration de copie : saisissez d'abord votre e-mail ou téléphone et votre phrase")
+        val (entrees, comptes) = instantane(c)
+        val valise = withContext(Dispatchers.IO) { SauvegardeCrypto.chiffrer(cle, SauvegardeCrypto.archiver(entrees)) }
+        Pair(MAGIE_FICHIER + byteArrayOf(1, mode) + valise, Resultat(true, "Copie prête : ${resumer(comptes, entrees.keys.count { it.startsWith("pieces/") })} (${valise.size / 1024} Ko, chiffrée)"))
+    } catch (e: Erreur) { Pair(null, Resultat(false, e.message ?: "Copie impossible")) } catch (e: Exception) { Pair(null, Resultat(false, "Copie impossible : ${e.message ?: e.javaClass.simpleName}")) }
+
+    /** Photographie VÉRIFIÉE de toutes les données (même contrôle que la sauvegarde en ligne), chiffrée avec identifiant + phrase : octets du fichier à enregistrer. La clé est mémorisée pour les copies suivantes. */
     suspend fun preparerCopieLocale(c: Context, phrase: String, identifiant: String): Pair<ByteArray?, Resultat> = try {
         val cles = withContext(Dispatchers.Default) { SauvegardeCrypto.deriver(phrase, identifiant) }
         val (entrees, comptes) = instantane(c)
         val valise = withContext(Dispatchers.IO) { SauvegardeCrypto.chiffrer(cles.chiffre, SauvegardeCrypto.archiver(entrees)) }
+        Base.secrets(c).edit().putString("copie_chiffre", hex(cles.chiffre)).apply()
         Pair(MAGIE_FICHIER + byteArrayOf(1, 2) + valise, Resultat(true, "Copie prête : ${resumer(comptes, entrees.keys.count { it.startsWith("pieces/") })} (${valise.size / 1024} Ko, chiffrée)"))
     } catch (e: Erreur) { Pair(null, Resultat(false, e.message ?: "Copie impossible")) } catch (e: Exception) { Pair(null, Resultat(false, "Copie impossible : ${e.message ?: e.javaClass.simpleName}")) }
 
