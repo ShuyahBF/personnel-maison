@@ -132,6 +132,10 @@ fun EcranSauvegarde(retour: () -> Unit) = Page("Sauvegarde en ligne", retour) {
     GrosBouton(Icons.Filled.SaveAlt, "Enregistrer une copie chiffrée", Orange, actif = !occupe) { copie = "creer"; phrase = ""; confirmation = "" }
     GrosBouton(Icons.Filled.FolderOpen, "Restaurer depuis un fichier", Bleu, actif = !occupe) { phrase = ""; ouvrirFichier.launch(arrayOf("*/*")) }
 
+    // 1.62 : alerte « autre appareil » (posée à l'ouverture ou à une sauvegarde refusée)
+    SauvegardeEnLigne.alerteAutreAppareil(c)?.let { Carte("Un autre appareil a sauvegardé", Icons.Filled.Warning) {
+        Text("Une sauvegarde faite depuis un AUTRE appareil date du ${it.take(16).replace('T', ' ')}. Votre sauvegarde automatique est suspendue pour ne rien écraser. Touchez « Restaurer la dernière sauvegarde » : un tableau compare les deux avant tout remplacement. Pour garder CE téléphone et remplacer la sauvegarde en ligne, utilisez « Sauvegarder maintenant » puis « Remplacer ».", fontSize = 15.sp, color = Rouge)
+    } }
     if (cloud) {
         Carte("Sauvegarde en ligne activée", Icons.Filled.CloudDone) {
             Ligne("Dernière sauvegarde", dateLisible(dernier))
@@ -236,10 +240,19 @@ fun EcranSauvegarde(retour: () -> Unit) = Page("Sauvegarde en ligne", retour) {
         AlertDialog(onDismissRequest = { apercu = null }, title = { Text("Remplacer les données de ce téléphone ?") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("La sauvegarde contient :", fontSize = 15.sp, color = BleuNuit)
-                    Text(SauvegardeEnLigne.resumer(ap.sauvegarde, ap.pieces), fontSize = 17.sp, color = if (ap.vide) Rouge else Vert)
-                    Text("Ce téléphone contient actuellement :", fontSize = 15.sp, color = BleuNuit)
-                    Text(SauvegardeEnLigne.resumer(ap.telephone), fontSize = 17.sp, color = Bleu)
+                    // 1.62 : tableau de COMPARAISON rubrique par rubrique (sauvegarde en ligne / ce téléphone), les différences en couleur
+                    val lignes = SauvegardeEnLigne.comparer(ap.sauvegarde, ap.telephone)
+                    val perdus = SauvegardeEnLigne.ajoutsLocaux(lignes)
+                    Row(Modifier.fillMaxWidth()) { Text("Rubrique", Modifier.weight(2f), fontSize = 14.sp, color = Gris); Text("En ligne", Modifier.weight(1f), fontSize = 14.sp, color = Gris, textAlign = androidx.compose.ui.text.style.TextAlign.End); Text("Ce téléphone", Modifier.weight(1.3f), fontSize = 14.sp, color = Gris, textAlign = androidx.compose.ui.text.style.TextAlign.End) }
+                    lignes.forEach { l ->
+                        Row(Modifier.fillMaxWidth()) {
+                            Text(l.libelle, Modifier.weight(2f), fontSize = 15.sp, color = BleuNuit)
+                            Text("${l.sauvegarde}", Modifier.weight(1f), fontSize = 15.sp, color = if (l.enPlusEnLigne > 0) Vert else BleuNuit, textAlign = androidx.compose.ui.text.style.TextAlign.End)
+                            Text("${l.telephone}" + if (l.enPlusSurTelephone > 0) " ▲" else "", Modifier.weight(1.3f), fontSize = 15.sp, color = if (l.enPlusSurTelephone > 0) Rouge else BleuNuit, textAlign = androidx.compose.ui.text.style.TextAlign.End)
+                        }
+                    }
+                    if (ap.pieces > 0) Text("${ap.pieces} pièce(s) jointe(s) dans la sauvegarde", fontSize = 14.sp, color = Gris)
+                    if (perdus > 0) Text("ATTENTION : ce téléphone contient $perdus élément(s) (▲) qui ne sont PAS dans la sauvegarde (faits depuis). Les restaurer les mettrait de côté sur ce téléphone, sans les fusionner. Si vous hésitez, annulez, puis faites d'abord « Enregistrer une copie chiffrée ».", fontSize = 15.sp, color = Rouge)
                     if (ap.vide && !ap.telephoneVide) Text("ATTENTION : la sauvegarde est VIDE alors que ce téléphone contient des données. Ne la restaurez pas.", fontSize = 15.sp, color = Rouge)
                     Text("Vos données actuelles seront mises de côté sur ce téléphone (vous pourrez les rétablir), puis l'application redémarrera.", fontSize = 14.sp, color = Gris)
                 }
